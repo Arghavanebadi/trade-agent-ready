@@ -1,4 +1,4 @@
-﻿"""Persistent, forward-only ensemble. Predictions are research observations."""
+"""Persistent, forward-only ensemble. Predictions are research observations."""
 import json
 import sqlite3
 from contextlib import closing
@@ -21,20 +21,43 @@ def observe(path, market, symbol, rows, votes, news_vote, observed_at):
             if t in bars:
                 delta = bars[t]['close'] - bars[t]['open']
                 db.execute('UPDATE forecasts SET outcome=? WHERE market=? AND symbol=? AND target=?',((delta>0)-(delta<0),*key,t))
-        weights = {}
-        settled = hits = guesses = 0
-        for fv, outcome, oldscore in db.execute('SELECT features,outcome,score FROM forecasts WHERE market=? AND symbol=? AND outcome IS NOT NULL AND target<? ORDER BY target DESC LIMIT 240',(*key,target)):
-            settled += 1
-            if outcome and abs(oldscore)>=0.25:
+        # Model metadata lives separately so earlier forecasts remain readable.
+        db.execute('CREATE TABLE IF NOT EXISTS learning_versions (market TEXT,symbol TEXT,target INTEGER, PRIMARY KEY(market,symbol,target))')
+        history = db.execute("""
+            SELECT f.target,f.features,f.outcome,f.score,v.target IS NOT NULL
+            FROM forecasts f LEFT JOIN learning_versions v USING(market,symbol,target)
+            WHERE f.market=? AND f.symbol=? AND f.outcome IS NOT NULL AND f.target<?
+            ORDER BY f.target DESC LIMIT 240""", (*key,target)).fetchall()
+        settled = len(history)
+        stats = {}
+        hits = guesses = paired = adapted_hits = baseline_hits = 0
+        for stamp, fv, outcome, oldscore, current_version in history:
+            recorded = json.loads(fv)
+            if not outcome:
+                continue
+            baseline = sum(recorded.values()) / (len(recorded) or 1)
+            if abs(oldscore) >= .25:
                 guesses += 1
-                hits += oldscore*outcome>0
-            for name,v in json.loads(fv).items():
-                if outcome:
-                    wins,n = weights.get(name,(0,0))
-                    weights[name]=(wins+int(v==outcome),n+1)
-        w = {k:(v+5)/(n+10) for k,(v,n) in weights.items()}
-        score = sum(v*w.get(k,.5) for k,v in features.items()) / (sum(w.get(k,.5) for k in features) or 1)
-        db.execute('INSERT OR IGNORE INTO forecasts VALUES (?,?,?,?,?,NULL)',(*key,target,json.dumps(features),score))
+                hits += oldscore*outcome > 0
+            if current_version and abs(oldscore)>=.25 and abs(baseline)>=.25:
+                paired += 1
+                adapted_hits += oldscore*outcome>0
+                baseline_hits += baseline*outcome>0
+            # Old observations lose half their influence every 48 market hours.
+            decay = .5 ** ((target-stamp)/(48*3600))
+            for name,v in recorded.items():
+                row=stats.setdefault(name,dict(samples=0,correct=0,mass=0.,wins=0.,last_target=stamp))
+                correct=int(v==outcome)
+                row['samples']+=1; row['correct']+=correct
+                row['mass']+=decay; row['wins']+=decay*correct
+        w={name:(row['wins']+5)/(row['mass']+10) for name,row in stats.items()}
+        score=sum(v*w.get(k,.5) for k,v in features.items())/(sum(w.get(k,.5) for k in features) or 1)
+        inserted=db.execute('INSERT OR IGNORE INTO forecasts VALUES (?,?,?,?,?,NULL)',(*key,target,json.dumps(features),score)).rowcount
+        if inserted:
+            db.execute('INSERT INTO learning_versions VALUES (?,?,?)',(*key,target))
         score, = db.execute('SELECT score FROM forecasts WHERE market=? AND symbol=? AND target=?',(*key,target)).fetchone()
-        return dict(target=target,score=score,samples=settled, directional_samples=guesses, correct=hits, weights=w,
+        agents=[dict(name=name,samples=r['samples'],correct=r['correct'],weight=w[name],last_target=r['last_target']) for name,r in stats.items()]
+        return dict(target=target,score=score,samples=settled,directional_samples=guesses,correct=hits,weights=w,
+                    agents=agents, last_settled=history[0][0]+3600 if history else None,
+                    comparison=dict(paired=paired,adaptive_correct=adapted_hits,baseline_correct=baseline_hits),
                     direction='WAIT' if settled<30 or abs(score)<.25 else 'LONG' if score>0 else 'SHORT')

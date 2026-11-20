@@ -20,6 +20,12 @@ function renderLearning(s){
  if(!s){box.textContent='در انتظار داده بازار';return}
  const a=s.adaptive,n=s.news;
  if(a)box.append(item('p','پیشنهاد آزمایشی: '+a.direction+' · کندل‌های ارزیابی‌شده: '+a.samples+' · جهت درست امتیاز خام: '+a.correct+' از '+a.directional_samples));
+ if(a?.comparison){
+  const c=a.comparison;
+  box.append(item('p',a.last_settled?'آخرین کندل ارزیابی‌شده: '+new Date(a.last_settled*1000).toLocaleString('fa-IR'):'در انتظار بسته‌شدن اولین کندل هدف'));
+  box.append(item('p',c.paired?'مقایسه روی '+c.paired+' کندل با رأی جهت‌دار هر دو روش: مدل تطبیقی '+c.adaptive_correct+' درست، رأی ساده '+c.baseline_correct+' درست.':'هنوز نتیجه مشترکی برای مقایسه دو روش ثبت نشده است.'));
+  for(const r of a.agents){const name=s.agents.find(x=>x.name===r.name)?.role||r.name;box.append(item('p',name+' · '+r.correct+' رأی درست از '+r.samples+' · وزن فعلی '+r.weight.toFixed(3)))}
+ }
  box.append(item('p',n?.available?'CoinDesk · تیتر مرتبط در ۲۴ ساعت: '+n.matched:'خبر در دسترس نیست'));
  for(const title of n?.headlines||[])box.append(item('p',title));
 }
