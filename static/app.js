@@ -38,9 +38,20 @@ function renderWorkflow(data,result){
  definitions.forEach(([label,detail,state],index)=>{const step=item('div','','flow-step');step.dataset.state=state;const number=item('span',state==='done'?'✓':String(index+1),'flow-number');const copy=item('div','');copy.append(item('strong',label),item('small',detail));step.append(number,copy);steps.append(step)});
  workflow.replaceChildren(heading,steps,item('p','گزارش نقش‌ها پس از پایان بررسی این ارز با هم نمایش داده می‌شود.','workflow-note'));
 }
+const profileKey='ebadi-risk-profile-v1';let personalProfile=null;
+try{const stored=JSON.parse(localStorage.getItem(profileKey)||'null');if(stored&&['low','moderate','high'].includes(stored.level)&&typeof stored.name==='string')personalProfile=stored}catch(error){personalProfile=null}
+function profileAdvice(result){
+ if(!personalProfile)return 'پروفایل ریسک تکمیل نشده است؛ نتیجه بدون شخصی‌سازی نمایش داده می‌شود.';
+ const label={low:'کم',moderate:'متوسط',high:'بالا'}[personalProfile.level];
+ if(!result||!usable(result))return 'پروفایل ریسک '+label+' · برای جمع‌بندی شخصی، داده تازه لازم است.';
+ if(result.direction==='WAIT')return 'پروفایل ریسک '+label+' · این بررسی سیگنال جهت‌دار ندارد.';
+ if(personalProfile.level==='low')return 'پروفایل ریسک کم · احتیاط و عدم اقدام؛ سیگنال خام فقط برای بررسی نمایش داده شده است.';
+ if(personalProfile.level==='moderate'&&(result.direction==='LONG'?result.negative:result.positive)>0)return 'پروفایل ریسک متوسط · به دلیل وجود رأی مخالف، بررسی بیشتر و عدم اقدام پیشنهاد می‌شود.';
+ return 'پروفایل ریسک '+label+' · نتیجه خام برای بررسی نمایش داده شده است؛ این ارزیابی مجوز معامله نیست.';
+}
 function renderDecision(result){
  const title=item('div','','decision-heading');const heading=item('div','');heading.append(item('span','ANALYSIS SUMMARY','eyebrow'),item('h2','جمع‌بندی و گزارش'));title.append(heading);
- if(!result||!usable(result)){decisionPanel.replaceChildren(title,item('p','پس از دریافت گزارش معتبر، نتیجه، رأی نقش‌ها و سطوح مرجع اینجا نمایش داده می‌شود.','decision-empty'));return}
+ if(!result||!usable(result)){decisionPanel.replaceChildren(title,item('p','پس از دریافت گزارش معتبر، نتیجه، رأی نقش‌ها و سطوح مرجع اینجا نمایش داده می‌شود.','decision-empty'),item('p',profileAdvice(null),'profile-advice'));return}
  const labels={LONG:'تمایل صعودی',SHORT:'تمایل نزولی',WAIT:'بدون سیگنال'};const signal=item('span',labels[result.direction]||'بدون سیگنال','decision-signal');signal.dataset.direction=result.direction;title.append(signal);
  const meta=item('p',result.symbol+' · آخرین بررسی '+new Date(result.checked_at*1000).toLocaleString('fa-IR')+' · قیمت کندل بسته '+money(result.price)+' USDT','decision-meta');
  const agents=Array.isArray(result.agents)?result.agents:[],positive=agents.filter(agent=>agent.vote>0),negative=agents.filter(agent=>agent.vote<0),neutral=agents.length-positive.length-negative.length;
@@ -50,7 +61,7 @@ function renderDecision(result){
  const legend=item('div','','vote-legend');for(const [label,count,kind] of [['مثبت',positive.length,'positive'],['خنثی یا بدون رأی',neutral,'neutral'],['منفی',negative.length,'negative']])legend.append(item('span',label+' '+count.toLocaleString('fa-IR'),'legend-'+kind));votes.append(bar,legend,item('p','رأی جهت‌دار، احتمال موفقیت نیست.','tiny'));
  const levels=item('div','','decision-levels');for(const [label,value] of [['قیمت مرجع',result.price],['حد مرجع',result.stop],['هدف مرجع',result.target]]){const box=item('div','','decision-level');box.append(item('small',label),item('strong',money(value)));levels.append(box)}
  const evidence=item('div','','decision-evidence');for(const [label,list] of [['شواهد مثبت',positive],['شواهد منفی',negative]]){const box=item('div','','evidence-box');box.append(item('h4',label));if(!list.length)box.append(item('p','رأیی ثبت نشده است.'));for(const agent of list.slice(0,3))box.append(item('p',agent.role+' · '+agent.detail));evidence.append(box)}
- decisionPanel.replaceChildren(title,meta,levels,votes,evidence,item('p','این گزارش پژوهشی است؛ سطوح مرجع سفارش ثبت نمی‌کنند و نتیجه معامله را تضمین نمی‌کنند.','decision-footnote'));
+ decisionPanel.replaceChildren(title,meta,item('p',profileAdvice(result),'profile-advice'),levels,votes,evidence,item('p','این گزارش پژوهشی است؛ سطوح مرجع سفارش ثبت نمی‌کنند و نتیجه معامله را تضمین نمی‌کنند.','decision-footnote'));
 }
 function renderChart(result){
  chartArea.replaceChildren();
@@ -79,9 +90,28 @@ async function refresh(){try{const response=await fetch('/api/scan',{cache:'no-s
 $('analyze').disabled=false;$('analyze').title='';
 $('analyze').onclick=async()=>{const button=$('analyze'),symbol=$('contract').value;if(!symbol){message('ابتدا یک قرارداد انتخاب کنید');return}button.disabled=true;button.textContent='در حال ثبت درخواست…';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});if(!response.ok)throw Error('امکان شروع تحلیل نیست');message('درخواست تحلیل ثبت شد');await refresh()}catch(e){message(e.message)}finally{button.disabled=false;button.textContent='✧ شروع تحلیل این ارز'}};$('refresh').onclick=refresh;$('download').onclick=downloadHtml;refresh();setInterval(refresh,3000);
 
-$('risk-form').onsubmit=async e=>{e.preventDefault();try{const answers=Object.fromEntries(new FormData(e.target));const name=answers.display_name.trim();delete answers.display_name;if(!name)throw Error('نام را وارد کنید');const response=await fetch('/api/risk-profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(answers)});if(!response.ok)throw Error('پاسخ‌ها را بررسی کنید');const result=await response.json();const labels={low:'کم',moderate:'متوسط',high:'بالا'};sessionStorage.setItem('profile_completed','yes');sessionStorage.setItem('profile_name',name);sessionStorage.setItem('profile_level',result.level);$('welcome').textContent=name+'، به مرکز تحلیل خوش آمدید';$('analyze').disabled=false;$('analyze').title='';$('profile-result').textContent='برآورد ریسک‌پذیری: '+labels[result.level]+' · امتیاز '+result.score+' از '+result.max_score+' · '+result.note}catch(error){message(error.message)}};
+function showProfile(){
+ const labels={low:'کم',moderate:'متوسط',high:'بالا'};
+ if(!personalProfile){$('welcome').textContent='پایش بازار، تحلیل چندنقشی و بررسی فرصت‌های احتمالی';$('profile-result').textContent='هنوز پرسش‌نامه تکمیل نشده است.';return}
+ $('welcome').textContent=personalProfile.name+'، به مرکز تحلیل خوش آمدید';
+ $('profile-result').textContent='پروفایل ریسک: '+labels[personalProfile.level]+' · امتیاز '+personalProfile.score+' از '+personalProfile.max_score+(personalProfile.reasons?.length?' · احتیاط: '+personalProfile.reasons.join('؛ '):'')+' · '+personalProfile.note;
+}
+$('risk-form').onsubmit=async event=>{
+ event.preventDefault();
+ try{
+  const answers=Object.fromEntries(new FormData(event.target));const name=answers.display_name.trim();delete answers.display_name;
+  if(!name)throw Error('نام را وارد کنید');
+  const response=await fetch('/api/risk-profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(answers)});
+  if(!response.ok)throw Error('پاسخ‌ها را بررسی کنید');
+  const result=await response.json();const profile={...result,name,answers};
+  try{localStorage.setItem(profileKey,JSON.stringify(profile))}catch(error){throw Error('ذخیره محلی در مرورگر در دسترس نیست')}
+  personalProfile=profile;showProfile();if(current)render(current);message('پروفایل ریسک ذخیره شد')
+ }catch(error){message(error.message)}
+};
+$('profile-clear').onclick=()=>{try{localStorage.removeItem(profileKey)}catch(error){message('حذف پروفایل از مرورگر ممکن نیست');return}personalProfile=null;$('risk-form').reset();showProfile();if(current)render(current);message('پروفایل محلی پاک شد')};
+if(personalProfile?.answers){for(const [key,value] of Object.entries(personalProfile.answers)){const field=$('risk-form').elements.namedItem(key);if(field)field.value=value}$('risk-form').elements.namedItem('display_name').value=personalProfile.name}
+showProfile();
 
-if(sessionStorage.getItem('profile_completed')==='yes'){const labels={low:'کم',moderate:'متوسط',high:'بالا'};const name=sessionStorage.getItem('profile_name')||'';$('welcome').textContent=name+'، به مرکز تحلیل خوش آمدید';$('profile-result').textContent='برآورد قبلی در این تب: '+(labels[sessionStorage.getItem('profile_level')]||'نامشخص');$('analyze').disabled=false;$('analyze').title='';}
 
 async function loadReports(){try{const r=await fetch('/api/reports',{cache:'no-store'});if(!r.ok)throw Error('تاریخچه در دسترس نیست');const data=await r.json();const list=$('reports-list');list.replaceChildren();if(!data.reports.length){list.append(item('p','هنوز گزارشی ثبت نشده است.','empty'));return}for(const entry of data.reports){const row=item('div','','report-row');const info=entry.report;const header=item('div','','report-header');header.append(item('strong',new Date(entry.timestamp*1000).toLocaleString('fa-IR')),item('span',(info.status==='running'?'بررسی انجام شد':'خطا')));row.append(header);const details=(info.results||[]).map(x=>x.symbol+' · '+x.direction+' · '+money(x.price)).join(' | ');row.append(item('p',details||'داده معتبر دریافت نشده است.'));for(const x of info.results||[]){if(!x.agents?.length)continue;const section=item('details','');section.append(item('summary',x.symbol+' · بررسی نقش‌ها'));for(const a of x.agents)section.append(item('p',a.role+' · '+a.detail+' ← '+a.status));row.append(section)}list.append(row)}}catch(e){$('reports-list').textContent=e.message}}
 $('reports-refresh').onclick=loadReports;loadReports();setInterval(loadReports,30000);

@@ -22,7 +22,7 @@ class Handler(BaseHTTPRequestHandler):
    if self.path=='/api/analyze': scanner.request_analysis(data.get('symbol')); result={'ok':True}; status=202
    elif self.path=='/api/chat': result=analyst.reply(scanner.get(),data); status=200
    else: result=risk_profile.assess(data); status=200
-   body=json.dumps(result,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
+   body=json.dumps(result,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
   except (ValueError,TypeError,AttributeError): self.send_error(400,'Invalid request')
  def do_GET(self):
   route=urlparse(self.path).path
