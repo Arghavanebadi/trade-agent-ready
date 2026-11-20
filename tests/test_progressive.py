@@ -27,6 +27,28 @@ class ProgressiveTests(unittest.TestCase):
   scan.data.update(last_scan=time.time(),results=[{'symbol':'BTC/USDT:USDT','checked_at':time.time()-901,'last_candle':time.time()-3700}])
   self.assertEqual(scan.get()['results'],[])
 
+ def test_failed_refresh_removes_previous_result_before_cycle_finishes(self):
+  waiting=threading.Event(); release=threading.Event()
+  class FailingExchange(FakeExchange):
+   def load_markets(self):
+    return {symbol:{'swap':True,'linear':True,'settle':'USDT','active':True} for symbol in ['BTC/USDT:USDT','ETH/USDT:USDT']}
+   def fetch_ohlcv(self,symbol,*args,**kwargs):
+    if symbol.startswith('BTC'): raise OSError('unavailable')
+    waiting.set(); release.wait(3)
+    return super().fetch_ohlcv(symbol,*args,**kwargs)
+  scan=FuturesScanner(factory=FailingExchange); scan.symbols=['BTC/USDT:USDT','ETH/USDT:USDT']
+  previous={'symbol':'BTC/USDT:USDT','checked_at':time.time(),'last_candle':time.time()-3600,'agents':[]}
+  scan.data.update(results=[previous],selected=previous,last_scan=time.time())
+  worker=threading.Thread(target=scan.run_once); worker.start()
+  try:
+   self.assertTrue(waiting.wait(3))
+   state=scan.get()
+   self.assertEqual(state['results'],[])
+   self.assertIsNone(state['selected'])
+   self.assertEqual(state['errors'][0]['symbol'],'BTC/USDT:USDT')
+  finally:
+   release.set(); worker.join(5)
+
  def test_catalog_is_cached_between_scans(self):
   class CountingExchange(FakeExchange):
    calls=0

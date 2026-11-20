@@ -73,6 +73,7 @@ class FuturesScanner:
   with self.lock:
    result=copy.deepcopy(self.data)
   result['symbols']=self.catalog[:] or self.symbols[:]
+  result['scan_interval_seconds']=self.interval
   now=time.time()
   result['results']=[item for item in result['results'] if 0<=now-item.get('checked_at',0)<=900 and 0<=now-(item.get('last_candle',0)+3600)<=4500]
   progress=result['progress']
@@ -198,6 +199,8 @@ class FuturesScanner:
      with self.lock:
       if generation==self.generation:
        self.data['errors']=copy.deepcopy(errors); self.data['progress'].update(stage='failed',agents=[])
+       self.data['results']=[item for item in self.data['results'] if item['symbol']!=symbol]
+       if self.data['selected'] and self.data['selected'].get('symbol')==symbol: self.data['selected']=None
     finally:
      with self.lock:
       if generation==self.generation: self.data['progress']['completed']+=1
