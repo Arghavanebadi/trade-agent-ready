@@ -98,7 +98,7 @@ class FuturesScanner:
      if not analysis['valid']: raise ValueError('; '.join(analysis['errors']))
      indicators=analysis['indicators']; p=indicators['price']; atr=indicators['atr']; direction='LONG' if analysis['action']=='WATCH_LONG' else 'SHORT' if analysis['action']=='AVOID' else 'WAIT'
      # Direction is a research label, not an order or a performance guarantee.
-     data={'symbol':symbol,'direction':direction,'votes':analysis['votes'],'positive':analysis['positive'],'negative':analysis['negative'],'price':p,'stop':p-2*atr if direction=='LONG' else p+2*atr if direction=='SHORT' else None,'target':p+3*atr if direction=='LONG' else max(0,p-3*atr) if direction=='SHORT' else None,'atr':atr,'rsi':indicators['rsi'],'last_candle':rows[-1]['time'],'agents':analysis['agents'],'funding_rate':None,'open_interest':None,'missing':[]}
+     data={'symbol':symbol,'direction':direction,'votes':analysis['votes'],'positive':analysis['positive'],'negative':analysis['negative'],'price':p,'stop':p-2*atr if direction=='LONG' else p+2*atr if direction=='SHORT' else None,'target':p+3*atr if direction=='LONG' else max(0,p-3*atr) if direction=='SHORT' else None,'atr':atr,'rsi':indicators['rsi'],'last_candle':rows[-1]['time'],'candles':rows[-60:],'agents':analysis['agents'],'funding_rate':None,'open_interest':None,'missing':[]}
      for capability,method,field,key in [('fetchFundingRate','fetch_funding_rate','fundingRate','funding_rate'),('fetchOpenInterest','fetch_open_interest','openInterestAmount','open_interest')]:
       if ex.has.get(capability):
        try:

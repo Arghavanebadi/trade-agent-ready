@@ -1,6 +1,7 @@
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from scanner import FuturesScanner
 from test_scanner import FakeExchange, sample
@@ -8,6 +9,8 @@ import research
 
 
 class ProgressiveTests(unittest.TestCase):
+ def setUp(self):
+  audit=patch('scanner.Audit'); audit.start(); self.addCleanup(audit.stop)
  def test_low_price_agent_evidence_preserves_precision(self):
   rows=sample()
   for row in rows:

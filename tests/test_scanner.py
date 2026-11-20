@@ -17,6 +17,8 @@ class FakeExchange:
  def fetch_funding_rate(self,s): return {'fundingRate':.0001}
  def fetch_open_interest(self,s): return {'openInterestAmount':42}
 class Tests(unittest.TestCase):
+ def setUp(self):
+  audit=patch('scanner.Audit'); audit.start(); self.addCleanup(audit.stop)
  def test_roles_and_data_validation(self):
   rows=sample();result=research.evaluate(rows,now=time.time());self.assertTrue(result['valid']);self.assertEqual(len(result['agents']),15)
   rows[-1]['close']=float('nan');self.assertFalse(research.evaluate(rows)['valid'])
@@ -37,6 +39,10 @@ class Tests(unittest.TestCase):
   scan=FuturesScanner(factory=FakeExchange);scan.symbols=['BTC/USDT:USDT'];scan.run_once();state=scan.get()
   self.assertEqual(state['progress']['completed'],1);self.assertEqual(len(state['agents']),15)
   self.assertEqual(next(a for a in state['agents'] if a['name']=='Stochastic analyst')['role'],'استوکاستیک')
+  candles=state['results'][0]['candles']
+  self.assertEqual(len(candles),60)
+  self.assertEqual(candles[-1]['time'],state['results'][0]['last_candle'])
+  self.assertLessEqual(candles[-1]['time']+3600,time.time())
  def test_request_focus_and_result(self):
   scan=FuturesScanner(factory=FakeExchange);scan.symbols=['BTC/USDT:USDT'];scan.request_analysis('BTC/USDT:USDT')
   self.assertIsNone(scan.get()['selected']);scan.run_once();state=scan.get()
