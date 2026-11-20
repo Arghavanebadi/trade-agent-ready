@@ -1,4 +1,4 @@
-﻿"""Minimal public Bybit V5 adapter for USDT linear perpetual market data."""
+"""Minimal public Bybit V5 adapter for USDT linear perpetual market data."""
 import json, re, urllib.parse, urllib.request
 
 class BybitPublic:
@@ -13,7 +13,7 @@ class BybitPublic:
   return data['result']
  @staticmethod
  def native(symbol):
-  match=re.fullmatch(r'([A-Z0-9]{2,20})/USDT:USDT',symbol)
+  match=re.fullmatch(r'([\w]{1,64})/USDT:USDT',symbol)
   if not match: raise ValueError('نماد قرارداد USDT نامعتبر است')
   return match.group(1)+'USDT'
  def load_markets(self):
@@ -43,3 +43,28 @@ class BybitPublic:
  def fetch_open_interest(self,symbol):
   value=self.ticker(symbol).get('openInterest')
   return {'openInterestAmount':float(value) if value not in (None,'') else None}
+ def catalog(self):
+  markets={}; cursor=''; seen=set()
+  while True:
+   page=self.api('instruments-info',{'limit':1000,'cursor':cursor})
+   for m in page['list']:
+    base=m.get('baseCoin','')
+    if base and m.get('symbol')==base+'USDT' and m.get('contractType')=='LinearPerpetual' and m.get('settleCoin')=='USDT' and m.get('status')=='Trading':
+     markets[base+'/USDT:USDT']={'swap':True,'linear':True,'settle':'USDT','active':True}
+   cursor=page.get('nextPageCursor')
+   if not cursor: return markets
+   if cursor in seen: raise ValueError('catalog cursor repeated')
+   seen.add(cursor)
+ def flow(self,symbol,now):
+  import math
+  buy=sell=count=0;seen=set()
+  for r in self.api('recent-trade',{'symbol':self.native(symbol),'limit':500})['list']:
+   try:
+    uid=r['execId'];p=float(r['price']);q=float(r['size']);v=p*q
+    if not uid or uid in seen or not math.isfinite(v) or min(p,q)<=0 or v<100000 or not 0<=now-float(r['time'])/1000<=300 or r['symbol']!=self.native(symbol) or r['side'] not in ('Buy','Sell'):continue
+    seen.add(uid);count+=1
+    if r['side']=='Buy':buy+=v
+    else:sell+=v
+   except (KeyError,ValueError,TypeError):continue
+  vote=0 if count<3 else 1 if buy>2*sell else -1 if sell>2*buy else 0
+  return dict(count=count,buy=buy,sell=sell,vote=vote)

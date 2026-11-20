@@ -1,4 +1,4 @@
-﻿"""Append-only local log of scan outcomes; no credentials are persisted."""
+"""Append-only local log of scan outcomes; no credentials are persisted."""
 import json, sqlite3, time
 from contextlib import closing
 from pathlib import Path
@@ -18,6 +18,7 @@ class Audit:
   entries=[]
   for item in state.get('results',[]):
    entries.append({k:item.get(k) for k in ('symbol','direction','votes','price','stop','target','last_candle')})
+   entries[-1]['agents']=[{k:a.get(k) for k in ('role','detail','status','vote')} for a in item.get('agents',[])]
   payload=json.dumps({'exchange':state.get('exchange'),'status':state.get('status'),'results':entries},ensure_ascii=False,allow_nan=False)
   with closing(sqlite3.connect(self.path,timeout=5)) as db, db:
    db.execute('CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, timestamp REAL NOT NULL, payload TEXT NOT NULL)')

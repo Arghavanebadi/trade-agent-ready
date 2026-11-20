@@ -20,6 +20,7 @@ class FuturesScanner:
  def __init__(self, factory=None):
   self.factory=factory; self.lock=threading.RLock(); self.stop_event=threading.Event(); self.wake_event=threading.Event(); self.thread=None
   self.exchange_id=os.getenv('EXCHANGE_ID','bybit'); self.symbols=[s.strip() for s in os.getenv('FUTURES_SYMBOLS','BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT').split(',') if s.strip()][:20]
+  self.catalog=[]; self.rotation=0
   try: self.interval=max(60,int(os.getenv('SCAN_INTERVAL_SECONDS','300')))
   except ValueError: self.interval=300
   self.data={'status':'starting','exchange':self.exchange_id,'last_scan':None,'next_scan':None,'results':[],'errors':[],'selected':None,'focus':None,'scope':'USDT perpetual swaps','activity':[],'progress':{'completed':0,'total':len(self.symbols),'symbol':None},'agents':[{'name':name,'role':role,'status':'در انتظار داده','detail':'هنوز تحلیل معتبر دریافت نشده است'} for name,role in ROLES]}
@@ -39,7 +40,7 @@ class FuturesScanner:
  def get(self):
   with self.lock:
    result=copy.deepcopy(self.data)
-  result['symbols']=self.symbols[:]
+  result['symbols']=self.catalog[:] or self.symbols[:]
   if result['focus']:
    focus_result=next((item for item in result['results'] if item['symbol']==result['focus']),None)
    result['selected']=focus_result
@@ -51,7 +52,7 @@ class FuturesScanner:
     agent['status']='داده قدیمی'; agent['detail']='تا دریافت داده جدید نتیجه معتبر نیست'
   return result
  def request_analysis(self,symbol):
-  if symbol not in self.symbols: raise ValueError('نماد در فهرست پیکربندی‌شده نیست')
+  if symbol not in (self.catalog or self.symbols): raise ValueError('نماد در فهرست پیکربندی‌شده نیست')
   with self.lock:
    self.data['focus']=symbol; self.data['results']=[]; self.data['selected']=None
    self.data['status']='starting'
@@ -63,8 +64,15 @@ class FuturesScanner:
    self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
   self.event('شروع دریافت داده بازار از '+self.exchange_id)
   try:
-   ex=self.client(); markets=ex.load_markets()
-   for symbol in self.symbols:
+   ex=self.client(); markets=ex.catalog() if hasattr(ex,'catalog') else ex.load_markets()
+   universe=sorted(k for k,m in markets.items() if m.get('swap') and m.get('linear') and m.get('settle')=='USDT' and m.get('active') is not False)
+   with self.lock:
+    self.catalog=universe
+    extra=(universe[self.rotation:]+universe[:self.rotation])[:3] if not self.factory else []
+    self.rotation=(self.rotation+len(extra))%max(1,len(universe))
+    batch=list(dict.fromkeys(filter(None,[self.data['focus'],*self.symbols,*extra])))
+    self.data['progress']['total']=len(batch)
+   for symbol in batch:
     with self.lock: self.data['progress']['symbol']=symbol
     self.event('بررسی قرارداد '+symbol)
     try:
@@ -92,8 +100,15 @@ class FuturesScanner:
      observed=time.time()
      news=headlines.feature(feed,symbol,observed) if feed is not False else {'available':False,'vote':0,'headlines':[]}
      data['news']=news
+     flow=None
+     if hasattr(ex,'flow'):
+      try: flow=ex.flow(symbol,time.time())
+      except Exception: pass
+     data['flow']=flow
+     data['checked_at']=time.time()
+     extra_votes=[{'name':'Large public prints','vote':flow['vote']}] if flow else []
      if self.factory is None:
-      data['adaptive']=learner.observe(Path(__file__).resolve().parent/'data'/'learning.sqlite3',self.exchange_id,symbol,rows,data['agents'],news['vote'],observed)
+      data['adaptive']=learner.observe(Path(__file__).resolve().parent/'data'/'learning.sqlite3',self.exchange_id,symbol,rows,data['agents']+extra_votes,news['vote'],time.time())
      data['missing']+=['order_book','whale_attribution']
      if not news['available']: data['missing'].append('news')
      results.append(data)
