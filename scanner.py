@@ -1,5 +1,5 @@
 """Background scanner for public USDT-margined perpetual data, no order execution."""
-import copy, os, threading, time
+import copy, json, os, tempfile, threading, time
 import research
 import diagnostics
 import headlines, learner
@@ -16,14 +16,46 @@ ROLES = [
  ('Range analyst','دامنه معاملاتی'), ('Candle analyst','ساختار کندل'),
  ('Acceleration analyst','شتاب بازده')]
 
+CATALOG_PATH=Path(__file__).resolve().parent/'data'/'market_catalog.json'
+CATALOG_MAX_AGE=24*3600
+
+def read_catalog(path,exchange,now):
+ try:
+  data=json.loads(path.read_text(encoding='utf-8'))
+  stamp=float(data['checked_at']); symbols=data['symbols']
+  if data['exchange']!=exchange or not 0<=now-stamp<=CATALOG_MAX_AGE or not isinstance(symbols,list) or not symbols: return None
+  if any(not isinstance(symbol,str) or len(symbol)>80 or not symbol.endswith('/USDT:USDT') for symbol in symbols): return None
+  return {symbol:{'swap':True,'linear':True,'settle':'USDT','active':True} for symbol in symbols},stamp
+ except (OSError,ValueError,KeyError,TypeError,OverflowError): return None
+
+def write_catalog(path,exchange,markets,now):
+ symbols=sorted(symbol for symbol,market in markets.items() if market.get('swap') and market.get('linear') and market.get('settle')=='USDT' and market.get('active') is not False)
+ if not symbols: return
+ path.parent.mkdir(parents=True,exist_ok=True)
+ temporary=None
+ try:
+  with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=path.parent,delete=False) as file:
+   temporary=Path(file.name); json.dump({'exchange':exchange,'checked_at':now,'symbols':symbols},file)
+  os.replace(temporary,path)
+ finally:
+  try:
+   if temporary: temporary.unlink(missing_ok=True)
+  except OSError: pass
+
 class FuturesScanner:
  def __init__(self, factory=None):
   self.factory=factory; self.lock=threading.RLock(); self.stop_event=threading.Event(); self.wake_event=threading.Event(); self.thread=None
   self.exchange_id=os.getenv('EXCHANGE_ID','bybit'); self.symbols=[s.strip() for s in os.getenv('FUTURES_SYMBOLS','BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT').split(',') if s.strip()][:20]
   self.catalog=[]; self.rotation=0; self.generation=0; self.market_cache=None; self.market_cache_time=0
+  self.market_cache_checked_at=0
   try: self.interval=max(60,int(os.getenv('SCAN_INTERVAL_SECONDS','300')))
   except ValueError: self.interval=300
-  self.data={'status':'starting','exchange':self.exchange_id,'last_scan':None,'next_scan':None,'results':[],'errors':[],'selected':None,'focus':None,'scope':'USDT perpetual swaps','activity':[],'progress':{'completed':0,'total':len(self.symbols),'symbol':None},'agents':[{'name':name,'role':role,'status':'در انتظار داده','detail':'هنوز تحلیل معتبر دریافت نشده است'} for name,role in ROLES]}
+  self.data={'status':'starting','exchange':self.exchange_id,'last_scan':None,'next_scan':None,'results':[],'errors':[],'selected':None,'focus':None,'scope':'USDT perpetual swaps','catalog_status':'unavailable','catalog_checked_at':None,'activity':[],'progress':{'completed':0,'total':len(self.symbols),'symbol':None},'agents':[{'name':name,'role':role,'status':'در انتظار داده','detail':'هنوز تحلیل معتبر دریافت نشده است'} for name,role in ROLES]}
+  if self.factory is None:
+   cached=read_catalog(CATALOG_PATH,self.exchange_id,time.time())
+   if cached:
+    self.market_cache,self.market_cache_checked_at=cached
+    self.catalog=sorted(self.market_cache)
  def event(self, message, level='info'):
   with self.lock:
    self.data['activity'].insert(0,{'time':time.time(),'level':level,'message':message})
@@ -77,9 +109,21 @@ class FuturesScanner:
    if self.market_cache is not None and time.monotonic()-self.market_cache_time<300:
     markets=self.market_cache
    else:
-    markets=ex.catalog() if hasattr(ex,'catalog') else ex.load_markets()
-    if not markets: raise ValueError('فهرست قراردادهای فعال خالی است')
-    self.market_cache=markets; self.market_cache_time=time.monotonic()
+    try:
+     markets=ex.catalog() if hasattr(ex,'catalog') else ex.load_markets()
+     if not markets: raise ValueError('فهرست قراردادهای فعال خالی است')
+     self.market_cache=markets; self.market_cache_time=time.monotonic(); self.market_cache_checked_at=time.time()
+     with self.lock: self.data.update(catalog_status='live',catalog_checked_at=self.market_cache_checked_at)
+     if self.factory is None:
+      try: write_catalog(CATALOG_PATH,self.exchange_id,markets,self.market_cache_checked_at)
+      except OSError: self.event('ثبت فهرست محلی بازار ناموفق بود','error')
+    except Exception:
+     if self.market_cache is None or not 0<=time.time()-self.market_cache_checked_at<=CATALOG_MAX_AGE:
+      with self.lock: self.data.update(catalog_status='unavailable')
+      raise
+     markets=self.market_cache
+     with self.lock: self.data.update(catalog_status='cached',catalog_checked_at=self.market_cache_checked_at)
+     self.event('فهرست بازار از نسخه ذخیره‌شده استفاده می‌کند؛ وضعیت قرارداد ممکن است تغییر کرده باشد.','warning')
    universe=sorted(k for k,m in markets.items() if m.get('swap') and m.get('linear') and m.get('settle')=='USDT' and m.get('active') is not False)
    with self.lock:
     self.catalog=universe

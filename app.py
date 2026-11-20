@@ -8,6 +8,16 @@ from audit import Audit
 
 ROOT=Path(__file__).resolve().parent
 scanner=FuturesScanner()
+def public_error(message):
+ text=str(message).lower()
+ if '403' in text or 'forbidden' in text: return 'منبع بازار دسترسی را رد کرد (HTTP 403). اتصال و دسترسی شبکه را بررسی کنید.'
+ if '429' in text or 'rate limit' in text: return 'محدودیت تعداد درخواست منبع بازار فعال است؛ کمی بعد دوباره تلاش می‌شود.'
+ if 'timed out' in text or 'timeout' in text: return 'پاسخ منبع بازار به‌موقع نرسید؛ اتصال را بررسی کنید.'
+ if 'خبر' in text: return 'دریافت یا پردازش خبر ناموفق بود؛ تحلیل قیمت در صورت دسترسی ادامه دارد.'
+ if 'تاریخی' in text or 'تطبیقی' in text: return 'ارزیابی تکمیلی در دسترس نیست؛ تحلیل قیمت در صورت دسترسی ادامه دارد.'
+ if 'ثبت' in text: return 'ثبت محلی گزارش یا فهرست ناموفق بود؛ دسترسی پوشه داده را بررسی کنید.'
+ if 'اسکن پایان' in text: return 'این نوبت بدون دریافت داده معتبر پایان یافت.'
+ return 'داده معتبر دریافت نشد؛ اتصال، دسترسی منبع و وضعیت داده را بررسی کنید.'
 class Handler(BaseHTTPRequestHandler):
  def do_POST(self):
   try:
@@ -35,9 +45,9 @@ class Handler(BaseHTTPRequestHandler):
      link=os.getenv('CREATOR_LINKEDIN_URL','')
      data['linkedin']=link if __import__('re').fullmatch(r'https://(?:www\.)?linkedin\.com/in/[\w%-]+/?',link) else None
      for event in data.get('activity',[]):
-      if event.get('level')=='error': event['message']='دریافت یا ثبت داده کامل نشد'
+      if event.get('level')=='error': event['message']=public_error(event['message'])
       elif venue: event['message']=event['message'].replace(venue,'منبع بازار')
-     for err in data.get('errors',[]): err['error']='داده معتبر در دسترس نیست'
+     for err in data.get('errors',[]): err['error']=public_error(err['error'])
      for result in data.get('results',[]):
       news=result.get('news',{})
       if venue: news['headlines']=[t for t in news.get('headlines',[]) if venue.lower() not in t.lower()]
