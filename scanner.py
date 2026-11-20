@@ -20,7 +20,7 @@ class FuturesScanner:
  def __init__(self, factory=None):
   self.factory=factory; self.lock=threading.RLock(); self.stop_event=threading.Event(); self.wake_event=threading.Event(); self.thread=None
   self.exchange_id=os.getenv('EXCHANGE_ID','bybit'); self.symbols=[s.strip() for s in os.getenv('FUTURES_SYMBOLS','BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT').split(',') if s.strip()][:20]
-  self.catalog=[]; self.rotation=0
+  self.catalog=[]; self.rotation=0; self.generation=0
   try: self.interval=max(60,int(os.getenv('SCAN_INTERVAL_SECONDS','300')))
   except ValueError: self.interval=300
   self.data={'status':'starting','exchange':self.exchange_id,'last_scan':None,'next_scan':None,'results':[],'errors':[],'selected':None,'focus':None,'scope':'USDT perpetual swaps','activity':[],'progress':{'completed':0,'total':len(self.symbols),'symbol':None},'agents':[{'name':name,'role':role,'status':'در انتظار داده','detail':'هنوز تحلیل معتبر دریافت نشده است'} for name,role in ROLES]}
@@ -54,13 +54,15 @@ class FuturesScanner:
  def request_analysis(self,symbol):
   if symbol not in (self.catalog or self.symbols): raise ValueError('نماد در فهرست پیکربندی‌شده نیست')
   with self.lock:
-   self.data['focus']=symbol; self.data['results']=[]; self.data['selected']=None
+   self.generation+=1
+   self.data['focus']=symbol; self.data['results']=[]; self.data['selected']=None; self.data['errors']=[]; self.data['last_scan']=None
    self.data['status']='starting'
   self.event('درخواست تحلیل مجدد '+symbol)
   self.wake_event.set()
  def run_once(self):
   now=time.time(); results=[]; errors=[]; feed=None
   with self.lock:
+   generation=self.generation
    self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
   self.event('شروع دریافت داده بازار از '+self.exchange_id)
   try:
@@ -73,6 +75,8 @@ class FuturesScanner:
     batch=list(dict.fromkeys(filter(None,[self.data['focus'],*self.symbols,*extra])))
     self.data['progress']['total']=len(batch)
    for symbol in batch:
+    with self.lock:
+     if generation!=self.generation: return None
     with self.lock: self.data['progress']['symbol']=symbol
     self.event('بررسی قرارداد '+symbol)
     try:
@@ -112,11 +116,19 @@ class FuturesScanner:
      data['missing']+=['order_book','whale_attribution']
      if not news['available']: data['missing'].append('news')
      results.append(data)
+     with self.lock:
+      if generation!=self.generation: return None
+      self.data['results']=copy.deepcopy(results)
+      self.data['errors']=copy.deepcopy(errors)
+      self.data['last_scan']=time.time()
+      self.data['agents']=copy.deepcopy(data['agents'])
      self.event(symbol+' · نتیجه '+direction)
     except Exception as e:
      error=str(e)[:200]; errors.append({'symbol':symbol,'error':error}); self.event(symbol+' · '+error,'error')
     finally:
      with self.lock: self.data['progress']['completed']+=1
+   with self.lock:
+    if generation!=self.generation: return None
    candidates=[r for r in results if r['direction']!='WAIT']
    selected=max(candidates,key=lambda x:abs(x['votes'])) if candidates else None
    state={'status':'running' if results else 'error','exchange':self.exchange_id,'last_scan':time.time(),'next_scan':time.time()+self.interval,'results':results,'errors':errors,'selected':selected,'scope':'USDT perpetual swaps'}
@@ -129,6 +141,7 @@ class FuturesScanner:
    self.event('ثبت گزارش پایدار ناموفق بود', 'error')
   self.event('اسکن پایان یافت؛ '+str(len(results))+' بازار بررسی شد', 'info' if results else 'error')
   with self.lock:
+   if generation!=self.generation: return None
    self.data.update(state); self.data['progress']['symbol']=None
    display=selected if results else None
    if not display and results: display=results[0]
@@ -138,8 +151,14 @@ class FuturesScanner:
     self.data['agents']=[{'name':name,'role':role,'status':'بدون داده','detail':'تحلیل اجرا نشد؛ اتصال یا ورودی در دسترس نیست'} for name,role in ROLES]
   return state
  def loop(self):
+  failures=0
   while not self.stop_event.is_set():
-   self.run_once(); self.wake_event.wait(self.interval); self.wake_event.clear()
+   state=self.run_once()
+   failures=failures+1 if state and state['status']=='error' else 0
+   delay=min(self.interval,15*2**min(failures-1,4)) if failures else self.interval
+   with self.lock:
+    if state is not None: self.data['next_scan']=time.time()+delay
+   self.wake_event.wait(delay); self.wake_event.clear()
  def start(self):
   if not self.thread or not self.thread.is_alive():
    self.thread=threading.Thread(target=self.loop,name='futures-scanner',daemon=True); self.thread.start()
