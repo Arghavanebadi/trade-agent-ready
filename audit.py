@@ -5,6 +5,23 @@ from pathlib import Path
 
 class Audit:
  def __init__(self, path): self.path=Path(path)
+ def history(self, symbol, now=None, days=7):
+  if not self.path.exists() or not isinstance(symbol,str): return []
+  from datetime import datetime, timezone
+  now=time.time() if now is None else now
+  selected=[]; seen=set()
+  with closing(sqlite3.connect(self.path,timeout=5)) as db:
+   exists=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='scans'").fetchone()
+   if not exists: return []
+   rows=db.execute('SELECT timestamp,payload FROM scans WHERE timestamp>=? AND timestamp<=? ORDER BY id DESC LIMIT 3000',(now-days*86400,now))
+   for stamp,payload in rows:
+    day=datetime.fromtimestamp(stamp,timezone.utc).date().isoformat()
+    if day in seen: continue
+    report=json.loads(payload)
+    result=next((entry for entry in report.get('results',[]) if entry.get('symbol')==symbol),None)
+    if result:
+     selected.append({'recorded_at':stamp,**result}); seen.add(day)
+  return selected
  def recent(self, limit=30):
   if not self.path.exists(): return []
   limit=max(1,min(int(limit),100))

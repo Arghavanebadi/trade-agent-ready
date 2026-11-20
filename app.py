@@ -1,5 +1,6 @@
 import json, os
 import risk_profile, analyst, news_digest
+from chat_quota import ChatQuota
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -9,6 +10,7 @@ from audit import Audit
 ROOT=Path(__file__).resolve().parent
 scanner=FuturesScanner()
 news_monitor=news_digest.NewsMonitor()
+chat_quota=ChatQuota(ROOT/'data'/'chat_usage.sqlite3')
 def public_error(message):
  text=str(message).lower()
  if '403' in text or 'forbidden' in text: return 'منبع بازار دسترسی را رد کرد (HTTP 403). اتصال و دسترسی شبکه را بررسی کنید.'
@@ -31,10 +33,14 @@ class Handler(BaseHTTPRequestHandler):
    if length<1 or length>(65536 if self.path=='/api/chat' else 1024): raise ValueError('اندازه درخواست نامعتبر است')
    data=json.loads(self.rfile.read(length))
    if self.path=='/api/analyze': scanner.request_analysis(data.get('symbol')); result={'ok':True}; status=202
-   elif self.path=='/api/chat': result=analyst.reply(scanner.get(),data); status=200
+   elif self.path=='/api/chat':
+    state=scanner.get(); symbol=data.get('symbol')
+    history=Audit(ROOT/'data'/'audit.sqlite3').history(symbol) if symbol in state['symbols'] else []
+    result=analyst.reply(state,data,historical=history,quota=chat_quota); status=200
    else: result=risk_profile.assess(data); status=200
    body=json.dumps(result,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
   except (ValueError,TypeError,AttributeError): self.send_error(400,'Invalid request')
+  except (OSError,__import__('sqlite3').Error): self.send_error(503,'Storage unavailable')
  def do_GET(self):
   route=urlparse(self.path).path
   if route in ('/api/scan','/api/reports','/api/news'):

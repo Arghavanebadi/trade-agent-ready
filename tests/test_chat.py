@@ -30,3 +30,11 @@ class Chat(unittest.TestCase):
             self.assertEqual(answer['mode'],'ai')
             payload=json.loads(call.call_args.args[0].data)
             self.assertIsNone(json.loads(payload['input'][0]['content'])['current_report'])
+    def test_local_model_receives_historical_reports(self):
+        out={'done':True,'message':{'content':'پاسخ'}}
+        with patch.dict('os.environ',{'XAI_API_KEY':'','OLLAMA_MODEL':'test'}),patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(out).encode())) as call:
+            answer=analyst.reply(self.state,self.req,10001,historical=[{'symbol':'BTC','recorded_at':9000}])
+            self.assertEqual(answer['mode'],'ai')
+            payload=json.loads(call.call_args.args[0].data)
+            self.assertEqual(json.loads(payload['messages'][1]['content'])['historical_reports'][0]['recorded_at'],9000)
+            self.assertEqual(call.call_args.args[0].full_url,'http://127.0.0.1:11434/api/chat')

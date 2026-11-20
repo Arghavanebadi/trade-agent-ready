@@ -3,12 +3,16 @@ import time
 import unittest
 from unittest.mock import patch
 
-from scanner import FuturesScanner
+from scanner import FuturesScanner, rank_markets
 from test_scanner import FakeExchange, sample
 import research
 
 
 class ProgressiveTests(unittest.TestCase):
+ def test_market_order_uses_turnover_and_fallback(self):
+  symbols=['OTHER/USDT:USDT','BTC/USDT:USDT','ETH/USDT:USDT']
+  self.assertEqual(rank_markets(symbols)[0],'BTC/USDT:USDT')
+  self.assertEqual(rank_markets(symbols,{'ETH/USDT:USDT':99,'BTC/USDT:USDT':1})[:2],['ETH/USDT:USDT','BTC/USDT:USDT'])
  def setUp(self):
   audit=patch('scanner.Audit'); audit.start(); self.addCleanup(audit.stop)
  def test_low_price_agent_evidence_preserves_precision(self):

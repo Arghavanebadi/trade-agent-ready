@@ -157,6 +157,9 @@ function renderCandidates(data){
 }
 $('contract').addEventListener('change',()=>{if(current)render(current)});
 const conversations=new Map();
+const chatStorageKey='ebadi-chat-history-v1';
+try{const saved=JSON.parse(localStorage.getItem(chatStorageKey)||'{}');for(const [symbol,turns] of Object.entries(saved).slice(-20))if(Array.isArray(turns))conversations.set(symbol,turns.filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string'&&typeof m.label==='string').slice(-40))}catch{}
+function saveChats(){try{localStorage.setItem(chatStorageKey,JSON.stringify(Object.fromEntries([...conversations.entries()].slice(-20).map(([symbol,turns])=>[symbol,turns.slice(-40)]))))}catch{message('ذخیره تاریخچه مرورگر در دسترس نیست')}}
 let pendingChat=false;
 function paintChat(symbol){
  const log=$('dialog');log.dataset.symbol=symbol;log.replaceChildren();
@@ -166,7 +169,7 @@ function paintChat(symbol){
  log.scrollTop=log.scrollHeight;
 }
 $('contract').addEventListener('change',()=>paintChat($('contract').value));
-$('chat-clear').onclick=()=>{conversations.delete($('contract').value);paintChat($('contract').value)};
+$('chat-clear').onclick=()=>{conversations.delete($('contract').value);saveChats();paintChat($('contract').value)};
 $('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('ask').requestSubmit()}});
 $('chat-report').onclick=()=>{if(!pendingChat){$('question').value='یک گزارش شامل نتیجه، شواهد موافق و مخالف، ریسک و شرایط ابطال بنویس.';$('ask').requestSubmit()}};
 $('ask').onsubmit=async e=>{
@@ -174,16 +177,16 @@ $('ask').onsubmit=async e=>{
  const symbol=$('contract').value,q=$('question').value.trim();if(!q||!symbol)return;
  const turns=conversations.get(symbol)||[],history=turns.filter(x=>x.keep).slice(-6).map(x=>({role:x.role,content:x.content.slice(0,1600)}));
  conversations.set(symbol,turns);turns.push({role:'user',label:'شما',content:q,keep:true});
- $('question').value='';paintChat(symbol);pendingChat=true;
+ $('question').value='';saveChats();paintChat(symbol);pendingChat=true;
  const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='در حال بررسی…';
  try{
  const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,question:q,expert:$('expert').value,history})});
  if(!res.ok)throw Error();
- const d=await res.json();const labels={ai:'تحلیل‌گر آنلاین',local:'خلاصه محلی',no_data:'وضعیت داده',busy:'وضعیت مدل',unavailable:'وضعیت مدل'};
+ const d=await res.json();const labels={ai:'دستیار تحلیلی',local:'خلاصه محلی',no_data:'وضعیت داده',busy:'وضعیت مدل',unavailable:'وضعیت مدل',quota:'سقف روزانه'};
  const stamp=d.checked_at?' · گزارش '+new Date(d.checked_at*1000).toLocaleTimeString('fa-IR'):'';
  turns.push({role:'assistant',label:(labels[d.mode]||'پاسخ')+' · '+symbol+stamp,content:d.answer,keep:d.mode==='ai'});
  }catch{turns.push({role:'assistant',label:'خطا',content:'ارتباط با سرور میز برقرار نشد.',keep:false})}
- finally{pendingChat=false;btn.disabled=false;btn.textContent='ارسال ↑';if(turns.length>40)turns.splice(0,turns.length-40);paintChat($('contract').value)}
+ finally{pendingChat=false;btn.disabled=false;btn.textContent='ارسال ↑';if(turns.length>40)turns.splice(0,turns.length-40);saveChats();paintChat($('contract').value)}
 };
 
 async function refreshNews(){
@@ -213,7 +216,7 @@ function downloadHtml(){if(!current)return;const doc=document.implementation.cre
 function fillMarkets(select,symbols){
  const q=$('search-market').value.trim().toUpperCase(), matches=symbols.filter(x=>x.includes(q)), signature=matches.join('|');
  const catalogNote=current?.catalog_status==='cached'?'فهرست ذخیره‌شده از '+new Date(current.catalog_checked_at*1000).toLocaleString('fa-IR')+'؛ وضعیت قرارداد ممکن است تغییر کرده باشد.':current?.catalog_status==='live'?'فهرست دریافت‌شده از منبع بازار.':'فقط فهرست اولیه در دسترس است؛ وضعیت قراردادها هنوز تأیید نشده است.';
- $('market-count').textContent='نماد در فهرست: '+symbols.length.toLocaleString('fa-IR')+' · نتیجه جست‌وجو: '+matches.length.toLocaleString('fa-IR')+' · '+catalogNote;
+ $('market-count').textContent='نماد در فهرست: '+symbols.length.toLocaleString('fa-IR')+' · نتیجه جست‌وجو: '+matches.length.toLocaleString('fa-IR')+' · '+(current?.catalog_order==='turnover'?'ترتیب بر اساس ارزش معاملات ۲۴ ساعته':'ترتیب پیش‌فرض؛ رتبه زنده در دسترس نیست')+' · '+catalogNote;
  if(select.dataset.markets===signature)return;
  const prev=select.value;select.replaceChildren(...matches.map(x=>new Option(x,x)));select.dataset.markets=signature;
  if(matches.includes(prev))select.value=prev;else if(matches.includes('BTC/USDT:USDT'))select.value='BTC/USDT:USDT';

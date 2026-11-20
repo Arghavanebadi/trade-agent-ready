@@ -37,6 +37,16 @@ class BybitPublic:
    if not rows: raise ValueError('داده تکمیلی موجود نیست')
    self.tickers[symbol]=rows[0]
   return self.tickers[symbol]
+ def popularity(self):
+  import math
+  ranking={}
+  for row in self.api('tickers',{}).get('list',[]):
+   try:
+    native=row['symbol']; turnover=float(row['turnover24h'])
+    if native.endswith('USDT') and math.isfinite(turnover) and turnover>=0:
+     ranking[native[:-4]+'/USDT:USDT']=turnover
+   except (KeyError,TypeError,ValueError): continue
+  return ranking
  def fetch_funding_rate(self,symbol):
   value=self.ticker(symbol).get('fundingRate')
   return {'fundingRate':float(value) if value not in (None,'') else None}

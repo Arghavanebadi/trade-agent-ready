@@ -3,6 +3,15 @@ from pathlib import Path
 from contextlib import closing
 from audit import Audit
 class AuditTests(unittest.TestCase):
+ def test_history_is_symbol_scoped_and_latest_per_day(self):
+  with tempfile.TemporaryDirectory() as temp:
+   audit=Audit(Path(temp)/'audit.db')
+   from unittest.mock import patch
+   for stamp,symbol,price in [(1700000000,'BTC',1),(1700000010,'BTC',2),(1700000020,'ETH',9),(1700086400,'BTC',3)]:
+    with patch('audit.time.time',return_value=stamp):
+     audit.record({'results':[{'symbol':symbol,'price':price}]})
+   history=audit.history('BTC',now=1700086401)
+   self.assertEqual([entry['price'] for entry in history],[3,2])
  def test_audit_persists_only_allowlisted_fields(self):
   with tempfile.TemporaryDirectory() as temp:
    path=Path(temp)/'audit.db'; a=Audit(path);a.record({'exchange':'test','status':'running','results':[{'symbol':'BTC','direction':'LONG','api_key':'secret'}]})

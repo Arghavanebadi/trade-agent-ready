@@ -18,6 +18,12 @@ ROLES = [
 
 CATALOG_PATH=Path(__file__).resolve().parent/'data'/'market_catalog.json'
 CATALOG_MAX_AGE=24*3600
+POPULAR_BASES=('BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','DOT')
+
+def rank_markets(symbols, turnover=None):
+ turnover=turnover or {}
+ fallback={base:index for index,base in enumerate(POPULAR_BASES)}
+ return sorted(symbols,key=lambda symbol:(0,-turnover[symbol],symbol) if symbol in turnover else (1,fallback.get(symbol.split('/')[0],len(fallback)),symbol))
 
 def read_catalog(path,exchange,now):
  try:
@@ -55,7 +61,7 @@ class FuturesScanner:
    cached=read_catalog(CATALOG_PATH,self.exchange_id,time.time())
    if cached:
     self.market_cache,self.market_cache_checked_at=cached
-    self.catalog=sorted(self.market_cache)
+    self.catalog=rank_markets(self.market_cache)
  def event(self, message, level='info'):
   with self.lock:
    self.data['activity'].insert(0,{'time':time.time(),'level':level,'message':message})
@@ -126,8 +132,13 @@ class FuturesScanner:
      with self.lock: self.data.update(catalog_status='cached',catalog_checked_at=self.market_cache_checked_at)
      self.event('فهرست بازار از نسخه ذخیره‌شده استفاده می‌کند؛ وضعیت قرارداد ممکن است تغییر کرده باشد.','warning')
    universe=sorted(k for k,m in markets.items() if m.get('swap') and m.get('linear') and m.get('settle')=='USDT' and m.get('active') is not False)
+   turnover={}
+   if hasattr(ex,'popularity'):
+    try: turnover=ex.popularity()
+    except Exception: self.event('ترتیب حجم معاملات در دسترس نیست؛ ترتیب پیش‌فرض نمایش داده می‌شود.','warning')
    with self.lock:
-    self.catalog=universe
+    self.catalog=rank_markets(universe,turnover)
+    self.data['catalog_order']='turnover' if turnover else 'fallback'
     extra=(universe[self.rotation:]+universe[:self.rotation])[:3] if not self.factory else []
     self.rotation=(self.rotation+len(extra))%max(1,len(universe))
     batch=list(dict.fromkeys(filter(None,[self.data['focus'],*self.symbols,*extra])))
