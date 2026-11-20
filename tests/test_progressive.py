@@ -3,10 +3,22 @@ import time
 import unittest
 
 from scanner import FuturesScanner
-from test_scanner import FakeExchange
+from test_scanner import FakeExchange, sample
+import research
 
 
 class ProgressiveTests(unittest.TestCase):
+ def test_low_price_agent_evidence_preserves_precision(self):
+  rows=sample()
+  for row in rows:
+   for field in ('open','high','low','close'): row[field]*=0.00000001
+  result=research.evaluate(rows,now=time.time())
+  self.assertTrue(result['valid'])
+  for name in ('Trend architect','Breakout watcher','Mean reversion','VWAP analyst'):
+   agent=next(agent for agent in result['agents'] if agent['name']==name)
+   self.assertNotIn('0.00 /',agent['detail'])
+   self.assertNotIn('· 0.00',agent['detail'])
+
  def test_stale_individual_result_is_not_exposed(self):
   scan=FuturesScanner(factory=FakeExchange)
   scan.data.update(last_scan=time.time(),results=[{'symbol':'BTC/USDT:USDT','checked_at':time.time()-901,'last_candle':time.time()-3700}])

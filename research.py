@@ -52,18 +52,18 @@ def evaluate(rows, now=None):
     body=abs(candle['close']-candle['open'])/candle_range*100 if candle_range else 0
     previous5=(rows[-6]['close']/rows[-11]['close']-1)*100
     agents=[
-      agent('Trend architect','روند EMA','صعودی' if trend==1 else 'نزولی' if trend==-1 else 'خنثی',f"EMA12 {x['ema12']:.2f} / EMA26 {x['ema26']:.2f}",trend),
+      agent('Trend architect','روند EMA','صعودی' if trend==1 else 'نزولی' if trend==-1 else 'خنثی',f"EMA12 {x['ema12']:.8g} / EMA26 {x['ema26']:.8g}",trend),
       agent('Momentum analyst','مومنتوم RSI','مثبت' if momentum==1 else 'منفی' if momentum==-1 else 'خنثی',f"RSI14 {x['rsi']:.1f}",momentum),
       agent('Volatility guard','نوسان ATR','بالا' if atrpct>3 else 'عادی',f'ATR / price {atrpct:.2f}%'),
-      agent('Breakout watcher','شکست محدوده','شکست بالا' if breakout==1 else 'شکست پایین' if breakout==-1 else 'داخل محدوده',f"20H {x['low20']:.2f} – {x['high20']:.2f}",breakout),
-      agent('Mean reversion','بازگشت به میانگین','انحراف بالا' if meanvote else 'عادی',f"SMA20 {x['mean20']:.2f} / σ {x['sd20']:.2f}",meanvote),
+      agent('Breakout watcher','شکست محدوده','شکست بالا' if breakout==1 else 'شکست پایین' if breakout==-1 else 'داخل محدوده',f"20H {x['low20']:.8g} – {x['high20']:.8g}",breakout),
+      agent('Mean reversion','بازگشت به میانگین','انحراف بالا' if meanvote else 'عادی',f"SMA20 {x['mean20']:.8g} / σ {x['sd20']:.8g}",meanvote),
       agent('Volume analyst','حجم نسبی','بالا' if x['volume_ratio']>1.2 else 'عادی',f"Volume ratio {x['volume_ratio']:.2f}x",volumevote),
       agent('Price action','بازده کوتاه‌مدت','مثبت' if pricevote==1 else 'منفی' if pricevote==-1 else 'خنثی',f"Return 5H {x['return5']:+.2f}%",pricevote),
       agent('Market regime','وضعیت بازار','رونددار' if abs(x['ema12']-x['ema26'])/p>.005 else 'خنثی','فاصله نسبی EMAها'),
       agent('Risk manager','کنترل ریسک','رد' if atrpct>3 else 'پذیرش مشروط','فیلتر نوسان؛ اندازه موقعیت محاسبه نمی‌شود'),
       agent('Data quality','کیفیت داده','تأیید','ترتیب، پیوستگی، قیمت، حجم و تازگی در صورت دسترسی'),
       agent('Stochastic analyst','استوکاستیک','بالا' if stochastic>80 else 'پایین' if stochastic<20 else 'متعادل',f'Stochastic 14 · {stochastic:.1f}'),
-      agent('VWAP analyst','میانگین وزنی حجم','بالای میانگین' if vwap and p>vwap else 'زیر میانگین' if vwap else 'حجم ناموجود',f'Rolling 20H VWAP · {vwap:.2f}' if vwap else 'حجم کافی نیست'),
+      agent('VWAP analyst','میانگین وزنی حجم','بالای میانگین' if vwap and p>vwap else 'زیر میانگین' if vwap else 'حجم ناموجود',f'Rolling 20H VWAP · {vwap:.8g}' if vwap else 'حجم کافی نیست'),
       agent('Range analyst','دامنه معاملاتی','محاسبه شد',f"20H range · {(x['high20']-x['low20'])/p*100:.2f}%"),
       agent('Candle analyst','ساختار کندل','صعودی' if candle['close']>candle['open'] else 'نزولی' if candle['close']<candle['open'] else 'خنثی',f'Body / range · {body:.1f}%'),
       agent('Acceleration analyst','شتاب بازده','محاسبه شد',f"5H return change · {x['return5']-previous5:+.2f} pp")]
