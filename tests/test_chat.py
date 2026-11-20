@@ -19,4 +19,7 @@ class Chat(unittest.TestCase):
             self.assertEqual(json.loads(payload['input'][0]['content'])['current_report']['symbol'],'BTC')
     def test_no_key(self):
         with patch.dict('os.environ',XAI_API_KEY=''):
-            self.assertEqual(analyst.reply(self.state,self.req,10001)['mode'],'local')
+            answer=analyst.reply(self.state,self.req,10001)
+            self.assertEqual(answer['mode'],'local')
+            self.assertIn('قیمت کندل بسته',answer['answer'])
+            self.assertIn('تضمین سود نیستند',answer['answer'])

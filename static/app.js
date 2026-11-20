@@ -30,7 +30,7 @@ function renderLearning(s){
  for(const title of n?.headlines||[])box.append(item('p',title));
 }
 function active(){return current?.results?.find(x=>x.symbol===$('contract').value)}
-function usable(s){return s&&current?.status!=='error'&&Date.now()/1000-current.last_scan<900&&Date.now()/1000-s.last_candle<8000}
+function usable(s){const now=Date.now()/1000;return s&&current?.status!=='error'&&now-s.checked_at>=0&&now-s.checked_at<=900&&now-(s.last_candle+3600)>=0&&now-(s.last_candle+3600)<=4500}
 function reason(s){return !usable(s)?'داده تازه کافی نیست؛ فعلاً بدون سیگنال.':s.symbol+' · '+s.direction+' · '+s.positive+' رأی مثبت و '+s.negative+' منفی. زمان بسته‌شدن کندل: '+new Date((s.last_candle+3600)*1000).toLocaleString('fa-IR')}
 function syncDesk(d){if($('dialog').dataset.symbol!==$('contract').value)paintChat($('contract').value);const s=active();if(d.linkedin){const link=item('a','LinkedIn');link.href=d.linkedin;$('linkedin').replaceChildren(link)}$('brief').textContent=reason(s);let select=$('expert'),prev=select.value;select.replaceChildren(new Option('جمع‌بندی تیم',''));for(const a of s?.agents||d.agents||[])select.add(new Option(a.role,a.name));select.value=prev;startTicker($('contract').value,d.ticker_supported)}
 $('contract').addEventListener('change',()=>{if(current)render(current)});
@@ -67,10 +67,12 @@ function downloadHtml(){if(!current)return;const doc=document.implementation.cre
 
 function fillMarkets(select,symbols){
  const q=$('search-market').value.trim().toUpperCase(), matches=symbols.filter(x=>x.includes(q)), signature=matches.join('|');
+ $('market-count').textContent='قرارداد فعال در فهرست: '+symbols.length.toLocaleString('fa-IR')+' · نتیجه جست‌وجو: '+matches.length.toLocaleString('fa-IR')+' · برای تحلیل هر نماد، آن را انتخاب کنید.';
  if(select.dataset.markets===signature)return;
  const prev=select.value;select.replaceChildren(...matches.map(x=>new Option(x,x)));select.dataset.markets=signature;
  if(matches.includes(prev))select.value=prev;else if(matches.includes('BTC/USDT:USDT'))select.value='BTC/USDT:USDT';
 }
+const marketCount=item('p','','tiny');marketCount.id='market-count';$('search-market').closest('.choose-panel').append(marketCount);
 $('search-market').oninput=()=>{if(current)render(current)};
 function wallStatus(s){
  $('wall-time').textContent=s?s.symbol+' · آخرین بررسی '+new Date(s.checked_at*1000).toLocaleTimeString('fa-IR'):'برای این ارز هنوز گزارشی دریافت نشده است.';

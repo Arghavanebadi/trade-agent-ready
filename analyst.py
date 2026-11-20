@@ -4,6 +4,7 @@ import os
 import threading
 import time
 import urllib.request
+from datetime import datetime, timezone
 
 SLOT = threading.BoundedSemaphore(1)
 SYSTEM = """به فارسی مثل تحلیل‌گر میز معامله پاسخ بده. فقط گزارش پیوست برای نماد و زمان مشخص منبع واقعیت بازار است.
@@ -11,6 +12,27 @@ SYSTEM = """به فارسی مثل تحلیل‌گر میز معامله پاس�
 جواب مستقیم، شواهد عددی و شواهد مخالف را بیان کن. قیمت کندل را قیمت زنده معرفی نکن. نبود داده را صریح بگو.
 رأی تطبیقی، رأی تکنیکال و جریان معاملات بزرگ را از هم تفکیک کن. هویت نهنگ، احتمال برد، سفارش یا قطعیت نساز.
 برای درخواست گزارش، نتیجه، دلایل، ریسک و شرایط ابطال را کوتاه بنویس. هیچ ابزاری برای معامله نداری."""
+
+def local_report(result, expert):
+    def number(value):
+        return format(value, '.8g') if isinstance(value, (int, float)) else 'ناموجود'
+    stamp=datetime.fromtimestamp(result['checked_at'], timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    direction={'LONG':'تمایل صعودی پژوهشی','SHORT':'تمایل نزولی پژوهشی','WAIT':'بدون جهت کافی'}.get(result.get('direction'),'نامشخص')
+    lines=[f"{result['symbol']} · {direction} · بررسی {stamp}",
+           f"قیمت کندل بسته: {number(result.get('price'))} · رأی مثبت: {result.get('positive', 0)} · رأی منفی: {result.get('negative', 0)}"]
+    agents=result.get('agents', [])
+    selected=[agent for agent in agents if agent.get('name')==expert] if expert else [agent for agent in agents if agent.get('vote')][:6]
+    for agent in selected:
+        lines.append(f"{agent.get('role', agent.get('name', 'تحلیلگر'))}: {agent.get('status', 'نامشخص')}؛ {agent.get('detail', 'بدون جزئیات')}")
+    if not selected: lines.append('شواهد جهت‌دار کافی در گزارش موجود نیست.')
+    lines.append(f"سطوح مرجع حد ضرر / هدف: {number(result.get('stop'))} / {number(result.get('target'))}")
+    flow=result.get('flow')
+    if isinstance(flow, dict):
+        lines.append(f"معاملات بزرگ عمومی در نمونه: {flow.get('count', 0)}؛ خرید {number(flow.get('buy'))}، فروش {number(flow.get('sell'))}. هویت معامله‌گران مشخص نیست.")
+    else: lines.append('جریان معاملات بزرگ در دسترس نیست.')
+    lines.append('داده‌های ناموجود: '+('، '.join(result.get('missing') or []) or 'موردی ثبت نشده است.'))
+    lines.append('این خلاصه محلی است؛ برای پاسخ گفت‌وگویی کلید مدل آنلاین لازم است. سطوح، سفارش یا تضمین سود نیستند.')
+    return '\n'.join(lines)
 
 def reply(state, request, now=None):
     now = time.time() if now is None else now
@@ -34,9 +56,7 @@ def reply(state, request, now=None):
     stamp={'symbol':symbol,'checked_at':result['checked_at']}
     key=os.getenv('XAI_API_KEY')
     if not key:
-        agent=next((a for a in result['agents'] if a['name']==expert),None)
-        evidence=agent['detail'] if agent else f"{result['positive']} رأی مثبت، {result['negative']} رأی منفی"
-        return {**stamp,'mode':'local','answer':f"{symbol} · {result['direction']} · {evidence}. مدل آنلاین پیکربندی نشده است."}
+        return {**stamp,'mode':'local','answer':local_report(result, expert)}
     payload={'model':os.getenv('GROK_MODEL') or 'grok-4.7','store':False,'max_output_tokens':1800,'instructions':SYSTEM,
              'input':[{'role':'user','content':json.dumps({'question':q,'specialist':expert,'previous_turns':hist,'current_report':ctx},ensure_ascii=False)}]}
     if not SLOT.acquire(blocking=False):

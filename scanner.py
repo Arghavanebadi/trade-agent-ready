@@ -20,7 +20,7 @@ class FuturesScanner:
  def __init__(self, factory=None):
   self.factory=factory; self.lock=threading.RLock(); self.stop_event=threading.Event(); self.wake_event=threading.Event(); self.thread=None
   self.exchange_id=os.getenv('EXCHANGE_ID','bybit'); self.symbols=[s.strip() for s in os.getenv('FUTURES_SYMBOLS','BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT').split(',') if s.strip()][:20]
-  self.catalog=[]; self.rotation=0; self.generation=0
+  self.catalog=[]; self.rotation=0; self.generation=0; self.market_cache=None; self.market_cache_time=0
   try: self.interval=max(60,int(os.getenv('SCAN_INTERVAL_SECONDS','300')))
   except ValueError: self.interval=300
   self.data={'status':'starting','exchange':self.exchange_id,'last_scan':None,'next_scan':None,'results':[],'errors':[],'selected':None,'focus':None,'scope':'USDT perpetual swaps','activity':[],'progress':{'completed':0,'total':len(self.symbols),'symbol':None},'agents':[{'name':name,'role':role,'status':'در انتظار داده','detail':'هنوز تحلیل معتبر دریافت نشده است'} for name,role in ROLES]}
@@ -41,6 +41,10 @@ class FuturesScanner:
   with self.lock:
    result=copy.deepcopy(self.data)
   result['symbols']=self.catalog[:] or self.symbols[:]
+  now=time.time()
+  result['results']=[item for item in result['results'] if 0<=now-item.get('checked_at',0)<=900 and 0<=now-(item.get('last_candle',0)+3600)<=4500]
+  if result['selected']:
+   result['selected']=next((item for item in result['results'] if item['symbol']==result['selected'].get('symbol')),None)
   if result['focus']:
    focus_result=next((item for item in result['results'] if item['symbol']==result['focus']),None)
    result['selected']=focus_result
@@ -66,7 +70,13 @@ class FuturesScanner:
    self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
   self.event('شروع دریافت داده بازار از '+self.exchange_id)
   try:
-   ex=self.client(); markets=ex.catalog() if hasattr(ex,'catalog') else ex.load_markets()
+   ex=self.client()
+   if self.market_cache is not None and time.monotonic()-self.market_cache_time<300:
+    markets=self.market_cache
+   else:
+    markets=ex.catalog() if hasattr(ex,'catalog') else ex.load_markets()
+    if not markets: raise ValueError('فهرست قراردادهای فعال خالی است')
+    self.market_cache=markets; self.market_cache_time=time.monotonic()
    universe=sorted(k for k,m in markets.items() if m.get('swap') and m.get('linear') and m.get('settle')=='USDT' and m.get('active') is not False)
    with self.lock:
     self.catalog=universe

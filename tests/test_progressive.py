@@ -1,4 +1,5 @@
 import threading
+import time
 import unittest
 
 from scanner import FuturesScanner
@@ -6,6 +7,21 @@ from test_scanner import FakeExchange
 
 
 class ProgressiveTests(unittest.TestCase):
+ def test_stale_individual_result_is_not_exposed(self):
+  scan=FuturesScanner(factory=FakeExchange)
+  scan.data.update(last_scan=time.time(),results=[{'symbol':'BTC/USDT:USDT','checked_at':time.time()-901,'last_candle':time.time()-3700}])
+  self.assertEqual(scan.get()['results'],[])
+
+ def test_catalog_is_cached_between_scans(self):
+  class CountingExchange(FakeExchange):
+   calls=0
+   def load_markets(self):
+    CountingExchange.calls+=1
+    return super().load_markets()
+  scan=FuturesScanner(factory=CountingExchange); scan.symbols=['BTC/USDT:USDT']
+  scan.run_once(); scan.run_once()
+  self.assertEqual(CountingExchange.calls,1)
+
  def test_results_visible_before_cycle_finishes_and_new_focus_wins(self):
   waiting=threading.Event(); release=threading.Event()
   class SlowExchange(FakeExchange):
