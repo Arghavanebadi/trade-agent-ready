@@ -1,5 +1,6 @@
 import io
 import json
+import threading
 import unittest
 from unittest.mock import patch
 import news_digest
@@ -31,3 +32,32 @@ class NewsDigestTests(unittest.TestCase):
             monitor.refresh()
         self.assertEqual(monitor.get()['status'],'unavailable')
         self.assertEqual(monitor.get()['items'][0]['title'],'cached')
+
+    def test_malformed_model_response_keeps_valid_news_available(self):
+        malformed = json.dumps({'status':'completed','output':['invalid message']}).encode()
+        with patch.object(news_digest,'SOURCES',(('BBC','https://feed.example/rss',('bbc.com',)),)), patch('news_digest.time.time',return_value=1795093200), patch.dict('os.environ',{'NEWS_AI_SUMMARY':'1','XAI_API_KEY':'test'}), patch('urllib.request.urlopen',side_effect=[io.BytesIO(FEED),io.BytesIO(malformed)]):
+            monitor=news_digest.NewsMonitor()
+            monitor.refresh()
+            result=monitor.get()
+        self.assertEqual(result['status'],'online')
+        self.assertEqual(result['ai_status'],'unavailable')
+        self.assertEqual(len(result['items']),1)
+        self.assertIsNone(result['items'][0]['summary'])
+
+    def test_invalid_link_does_not_discard_other_articles(self):
+        bad = b'<item><title>Bad</title><link>https://[invalid</link><pubDate>Thu, 19 Nov 2026 12:00:00 GMT</pubDate></item>'
+        articles=news_digest.parse_feed(FEED.replace(b'</channel>',bad+b'</channel>'),'BBC',('bbc.com',),1795093200)
+        self.assertEqual(len(articles),1)
+
+    def test_start_does_not_duplicate_worker(self):
+        monitor=news_digest.NewsMonitor()
+        started=threading.Event()
+        with patch.object(monitor,'refresh',side_effect=started.set):
+            monitor.start()
+            self.assertTrue(started.wait(2))
+            worker=monitor.thread
+            monitor.start()
+            self.assertIs(monitor.thread,worker)
+            monitor.stop()
+            worker.join(2)
+        self.assertFalse(worker.is_alive())

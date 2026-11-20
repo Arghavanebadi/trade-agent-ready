@@ -6,6 +6,7 @@ import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 SOURCES = (
@@ -23,13 +24,19 @@ def parse_feed(raw, source, domains, now):
     for entry in root.findall('.//item')[:40]:
         title = ' '.join(''.join(entry.findtext('title', default='').splitlines()).split())[:400]
         url = entry.findtext('link', default='').strip()
-        parsed = urllib.parse.urlsplit(url)
+        try:
+            parsed = urllib.parse.urlsplit(url)
+        except ValueError:
+            continue
         host = (parsed.hostname or '').lower()
-        if not title or parsed.scheme != 'https' or not any(host == d or host.endswith('.'+d) for d in domains):
+        if not title or parsed.scheme != 'https' or parsed.username is not None or not any(host == d or host.endswith('.'+d) for d in domains):
             continue
         try:
-            published = parsedate_to_datetime(entry.findtext('pubDate', default='')).timestamp()
-        except (TypeError, ValueError, OverflowError):
+            published_date = parsedate_to_datetime(entry.findtext('pubDate', default=''))
+            if published_date.tzinfo is None:
+                published_date = published_date.replace(tzinfo=timezone.utc)
+            published = published_date.timestamp()
+        except (TypeError, ValueError, OverflowError, OSError):
             continue
         if not 0 <= now-published <= 172800:
             continue
@@ -47,10 +54,13 @@ def summarize(items, key):
         'input':[{'role':'user','content':json.dumps([{'id':i, 'title':v['title'], 'source':v['source']} for i,v in enumerate(selected)],ensure_ascii=False)}]}
     request = urllib.request.Request('https://api.x.ai/v1/responses', data=json.dumps(payload).encode(), headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
     with urllib.request.urlopen(request, timeout=30) as response:
-        data = json.load(response)
-    if data.get('status') != 'completed':
+        raw = response.read(1000001)
+    if len(raw) > 1000000:
+        raise ValueError('summary response too large')
+    data = json.loads(raw)
+    if not isinstance(data,dict) or data.get('status') != 'completed' or not isinstance(data.get('output'),list):
         raise ValueError('incomplete summary')
-    output = ''.join(c.get('text','') for message in data.get('output',[]) if message.get('type') == 'message' for c in message.get('content',[]) if c.get('type') == 'output_text')
+    output = ''.join(c['text'] for message in data['output'] if isinstance(message,dict) and message.get('type') == 'message' and isinstance(message.get('content'),list) for c in message['content'] if isinstance(c,dict) and c.get('type') == 'output_text' and isinstance(c.get('text'),str))
     summaries = json.loads(output)
     if not isinstance(summaries,list):
         raise ValueError('invalid summaries')
@@ -67,7 +77,7 @@ class NewsMonitor:
         self.interval = max(60, interval)
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
-        self.state = {'status':'starting','items':[], 'checked_at':None, 'sources_ok':0, 'sources_total':len(SOURCES), 'ai_enabled':False}
+        self.state = {'status':'starting','items':[], 'checked_at':None, 'sources_ok':0, 'sources_total':len(SOURCES), 'ai_enabled':False, 'ai_status':'disabled'}
         self.thread = None
 
     def refresh(self):
@@ -87,16 +97,18 @@ class NewsMonitor:
         seen = set()
         items = [entry for entry in sorted(items,key=lambda entry:entry['published_at'],reverse=True) if not (entry['url'] in seen or seen.add(entry['url']))][:30]
         enabled = os.getenv('NEWS_AI_SUMMARY','').lower() in ('1','true','yes') and bool(os.getenv('XAI_API_KEY'))
-        if enabled:
+        ai_status = 'waiting' if enabled else 'disabled'
+        if enabled and items:
             try:
                 summarize(items,os.getenv('XAI_API_KEY'))
-            except (OSError, ValueError, TypeError, json.JSONDecodeError):
-                pass
+                ai_status = 'ready' if any(item['summary'] for item in items) else 'unavailable'
+            except (OSError, ValueError, TypeError):
+                ai_status = 'unavailable'
         with self.lock:
             if ok:
-                self.state.update(status='online' if ok == len(SOURCES) else 'partial',items=items,checked_at=now,sources_ok=ok,ai_enabled=enabled)
+                self.state.update(status='online' if ok == len(SOURCES) else 'partial',items=items,checked_at=now,sources_ok=ok,ai_enabled=enabled,ai_status=ai_status)
             else:
-                self.state.update(status='unavailable',sources_ok=0,ai_enabled=enabled)
+                self.state.update(status='unavailable',sources_ok=0,ai_enabled=enabled,ai_status=ai_status)
 
     def get(self):
         with self.lock:
@@ -107,8 +119,9 @@ class NewsMonitor:
             while not self.stop_event.is_set():
                 self.refresh()
                 self.stop_event.wait(self.interval)
-        self.thread = threading.Thread(target=run,daemon=True)
-        self.thread.start()
+        if not self.thread or not self.thread.is_alive():
+            self.thread = threading.Thread(target=run,daemon=True)
+            self.thread.start()
 
     def stop(self):
         self.stop_event.set()

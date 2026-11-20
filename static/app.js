@@ -25,6 +25,7 @@ const qualityDetails=item('div','','quality-details');qualityDetails.id='quality
 const candidates=item('section','','candidates');candidates.setAttribute('aria-label','فرصت‌های بررسی‌شده');$('results').before(candidates);
 const chartPanel=item('section','','panel chart-panel');
 const chartTitle=item('h3','نمودار قیمت');const chartNote=item('p','منتظر دریافت داده معتبر','tiny');const chartArea=item('div','','chart-area');
+chartArea.tabIndex=0;chartArea.setAttribute('role','region');chartArea.setAttribute('aria-label','نمودار قیمت؛ برای پیمایش افقی از کلیدهای جهت‌دار استفاده کنید');
 chartPanel.append(chartTitle,chartNote,chartArea);document.querySelector('.desk-hero').after(chartPanel);
 const workflow=item('section','','panel workflow');workflow.setAttribute('aria-label','مسیر تحلیل');document.querySelector('.choose-panel').after(workflow);
 const decisionPanel=item('section','','panel decision-panel');decisionPanel.id='decision-report';decisionPanel.setAttribute('aria-label','جمع‌بندی تحلیل');$('agents').after(decisionPanel);
@@ -95,9 +96,25 @@ function renderQuality(s){
  for(const text of ['زمان دریافت گزارش: '+checked,'زمان بسته‌شدن کندل: '+close,'سن گزارش: '+Math.floor((Date.now()/1000-s.checked_at)/60).toLocaleString('fa-IR')+' دقیقه','Funding: '+(s.funding_rate==null?'ناموجود':money(s.funding_rate)),'Open interest: '+(s.open_interest==null?'ناموجود':money(s.open_interest)),'جریان معاملات بزرگ: '+(s.flow?'دریافت شد':'ناموجود'),'خبر: '+(s.news?.available?'دریافت شد':'ناموجود')])qualityDetails.append(item('p',text));
 }
 function render(d){current=d;const dropdown=$('contract');fillMarkets(dropdown,d.symbols||[]);const selected=d.results.find(x=>x.symbol===dropdown.value&&usable(x));const status={starting:'در حال شروع',scanning:'در حال بررسی',running:'پایش فعال',error:'خطا در داده',stale:'داده قدیمی'};$('system-status').textContent=status[d.status]||d.status;$('exchange').textContent='کندل‌های یک‌ساعته';$('symbol').textContent=selected?selected.symbol:dropdown.value;$('direction').textContent=selected?(selected.direction==='WAIT'?'بدون سیگنال':selected.direction):'بدون سیگنال';$('price').textContent=selected?money(selected.price):'—';$('levels').textContent=selected?money(selected.stop)+' / '+money(selected.target):'—';$('votes').textContent=selected?selected.positive+' مثبت / '+selected.negative+' منفی':'—';$('scan-time').textContent=d.last_scan?'آخرین بررسی: '+new Date(d.last_scan*1000).toLocaleString('fa-IR'):'هنوز بررسی موفقی انجام نشده است.';$('results').replaceChildren();if(!d.results.length)$('results').append(item('p','داده‌ای دریافت نشد؛ اتصال را بررسی کنید.','empty'));for(const r of d.results){const row=item('div','','order');row.append(item('span',r.symbol+' · '+r.direction),item('span',money(r.price)+' USDT'));$('results').append(row)}$('errors').replaceChildren(...d.errors.map(x=>item('p',x.symbol+': '+x.error)));const s=selected;const partial=!s&&d.progress?.symbol===dropdown.value&&d.progress.stage==='enriching'?d.progress.agents:[];wallStatus(s,partial);syncDesk(d);renderDiagnostics(s?.diagnostics);renderLearning(s);$('quality').textContent=s?'Funding: '+(s.funding_rate==null?'ناموجود':s.funding_rate)+' · Open interest: '+(s.open_interest==null?'ناموجود':s.open_interest)+'\nداده‌های استفاده‌نشده یا ناموجود: '+s.missing.join(', '):'هیچ سیگنال معتبری در دسترس نیست.';$('progress').textContent=(d.progress?.completed??0)+' / '+(d.progress?.total??0)+' '+(d.progress?.symbol||'');$('activity').replaceChildren(...(d.activity||[]).map(x=>{const row=item('div','','activityrow');row.append(item('span',new Date(x.time*1000).toLocaleTimeString('fa-IR')),item('span',x.message,x.level==='error'?'negative':''));return row}));$('agent-list').replaceChildren();const failed=d.status==='error'||d.status==='stale'||d.errors.some(x=>x.symbol===dropdown.value||x.symbol==='*');const waiting=['starting','scanning'].includes(d.status)&&(d.focus===dropdown.value||d.progress?.symbol===dropdown.value);const fallback=failed?'داده معتبر دریافت نشد؛ اتصال را بررسی کنید.':waiting?'در حال دریافت داده.':'برای این ارز تحلیل را شروع کنید.';for(const [i,a] of (s?.agents||(partial?.length?partial:null)||(d.agents||[]).map(a=>({...a,status:failed?'بدون داده':waiting?'در انتظار داده':'تحلیل نشده',detail:fallback,vote:null}))).entries()){const card=item('article','','agent');card.dataset.vote=String(a.vote||0);card.dataset.phase=typeof a.vote==='number'?'done':failed?'failed':'waiting';const profile=agentProfiles[a.name]||['🔹','تحلیلگر بازار'];const top=item('div','','agenttop');const icon=item('span',profile[0],'agenticon');icon.setAttribute('aria-hidden','true');top.append(icon,item('span',a.status,'agentstate'));const specialty=item('span',profile[1],'agent-specialty');const evidence=item('div','','agent-evidence');evidence.append(item('p','بررسی تخصصی'),item('strong',a.detail));const phase=item('span',typeof a.vote==='number'?'✓ نتیجه محاسبه شد':failed?'⚠ داده در دسترس نیست':'◌ در انتظار داده معتبر','agent-phase');card.append(top,specialty,item('h4',a.role),phase,evidence);const history=s?.adaptive?.agents?.find(r=>r.name===a.name);if(history)card.append(item('small','یادگیری: '+history.correct+' رأی درست از '+history.samples));if(typeof a.vote==='number')card.append(item('small','رأی محاسباتی: '+(a.vote>0?'+':'')+a.vote));$('agent-list').append(card)}filterWall()}
-async function refresh(){try{const response=await fetch('/api/scan',{cache:'no-store'});if(!response.ok)throw Error('خطای سرور');render(await response.json())}catch(e){current=null;renderWorkflow({status:'error',errors:[]},null);renderDecision(null);renderChart(null);$('price').textContent='—';$('levels').textContent='—';$('votes').textContent='—';$('results').replaceChildren(item('p','ارتباط با برنامه قطع است.','empty'));candidates.replaceChildren();$('agent-list').replaceChildren();$('quality').textContent='ارتباط پنل با سرور قطع است';qualityDetails.replaceChildren();$('system-status').textContent='آفلاین';$('system-status').dataset.state='error';$('direction').textContent='قطع ارتباط';$('brief').textContent='گزارش تازه در دسترس نیست';message('ارتباط با برنامه برقرار نشد')}}
+let scanRequest=null,scanRevision=0,lastScanSignature=null;
+async function refresh(){
+ if(scanRequest)return scanRequest;
+ const revision=scanRevision;
+ scanRequest=(async()=>{
+  try{
+   const response=await fetch('/api/scan',{cache:'no-store'});if(!response.ok)throw Error('خطای سرور');
+   const data=await response.json();if(revision!==scanRevision)return;
+   const signature=JSON.stringify(data)+'|'+Math.floor(Date.now()/60000);
+   if(signature!==lastScanSignature){render(data);lastScanSignature=signature}
+  }catch(e){
+   if(revision!==scanRevision)return;
+   lastScanSignature=null;current=null;renderWorkflow({status:'error',errors:[]},null);renderDecision(null);renderChart(null);$('price').textContent='—';$('levels').textContent='—';$('votes').textContent='—';$('results').replaceChildren(item('p','ارتباط با برنامه قطع است.','empty'));candidates.replaceChildren();$('agent-list').replaceChildren();$('quality').textContent='ارتباط پنل با سرور قطع است';qualityDetails.replaceChildren();$('system-status').textContent='آفلاین';$('system-status').dataset.state='error';$('direction').textContent='قطع ارتباط';$('brief').textContent='گزارش تازه در دسترس نیست';message('ارتباط با برنامه برقرار نشد')
+  }
+ })();
+ try{await scanRequest}finally{scanRequest=null}
+}
 $('analyze').disabled=false;$('analyze').title='';
-$('analyze').onclick=async()=>{const button=$('analyze'),symbol=$('contract').value;if(!symbol){message('ابتدا یک قرارداد انتخاب کنید');return}button.disabled=true;button.textContent='در حال ثبت درخواست…';try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});if(!response.ok)throw Error('امکان شروع تحلیل نیست');document.body.classList.add('analysis-open');message('درخواست تحلیل ثبت شد');await refresh();workflow.scrollIntoView({block:'start',behavior:'smooth'})}catch(e){message(e.message)}finally{button.disabled=false;button.textContent='✧ شروع تحلیل این ارز'}};$('refresh').onclick=refresh;$('download').onclick=downloadHtml;refresh();setInterval(refresh,1500);
+$('analyze').onclick=async()=>{const button=$('analyze'),symbol=$('contract').value;if(!symbol){message('ابتدا یک قرارداد انتخاب کنید');return}button.disabled=true;button.textContent='در حال ثبت درخواست…';scanRevision++;lastScanSignature=null;try{const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol})});if(!response.ok)throw Error('امکان شروع تحلیل نیست');document.body.classList.add('analysis-open');message('درخواست تحلیل ثبت شد');if(scanRequest)await scanRequest;await refresh();workflow.scrollIntoView({block:'start',behavior:'smooth'})}catch(e){message(e.message)}finally{button.disabled=false;button.textContent='✧ شروع تحلیل این ارز'}};$('refresh').onclick=refresh;$('download').onclick=downloadHtml;refresh();setInterval(refresh,1500);
 
 function showProfile(){
  const labels={low:'کم',moderate:'متوسط',high:'بالا'};
@@ -190,12 +207,14 @@ $('ask').onsubmit=async e=>{
  finally{pendingChat=false;btn.disabled=false;btn.textContent='ارسال ↑';if(turns.length>40)turns.splice(0,turns.length-40);saveChats();paintChat($('contract').value)}
 };
 
+let newsSignature=null;
 async function refreshNews(){
  try{
   const response=await fetch('/api/news',{cache:'no-store'});if(!response.ok)throw Error();
-  const data=await response.json(), list=$('news-list');list.replaceChildren();
+  const data=await response.json(), list=$('news-list');
   const states={starting:'در حال دریافت خبر…',online:'منابع متصل',partial:'بخشی از منابع در دسترس',unavailable:'دریافت خبر قطع است'};
   $('news-status').textContent=(states[data.status]||'نامشخص')+(data.checked_at?' · '+new Date(data.checked_at*1000).toLocaleTimeString('fa-IR'):'');
+  const signature=JSON.stringify(data.items);if(signature===newsSignature)return;newsSignature=signature;list.replaceChildren();
   if(!data.items.length){list.append(item('p','خبری دریافت نشده است.','tiny'));return}
   for(const news of data.items){
    const card=item('article','','news-item');const meta=item('div','','news-meta');

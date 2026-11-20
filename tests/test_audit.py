@@ -3,6 +3,16 @@ from pathlib import Path
 from contextlib import closing
 from audit import Audit
 class AuditTests(unittest.TestCase):
+ def test_history_uses_latest_timestamp_even_if_inserted_out_of_order(self):
+  with tempfile.TemporaryDirectory() as temp:
+   audit=Audit(Path(temp)/'audit.db')
+   from unittest.mock import patch
+   for timestamp,price in [(1700000020,2),(1700000010,1)]:
+    with patch('audit.time.time',return_value=timestamp):
+     audit.record({'results':[{'symbol':'BTC','price':price}]})
+   self.assertEqual(audit.history('BTC',now=1700000030)[0]['price'],2)
+   with closing(sqlite3.connect(audit.path)) as db:
+    self.assertIsNotNone(db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='scans_timestamp_idx'").fetchone())
  def test_history_filters_market_and_current_candle(self):
   with tempfile.TemporaryDirectory() as temp:
    audit=Audit(Path(temp)/'audit.db')

@@ -13,7 +13,7 @@ class Audit:
   with closing(sqlite3.connect(self.path,timeout=5)) as db:
    exists=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='scans'").fetchone()
    if not exists: return []
-   rows=db.execute('SELECT timestamp,payload FROM scans WHERE timestamp>=? AND timestamp<=? ORDER BY id DESC LIMIT 3000',(now-days*86400,now))
+   rows=db.execute('SELECT timestamp,payload FROM scans WHERE timestamp>=? AND timestamp<=? ORDER BY timestamp DESC,id DESC LIMIT 3000',(now-days*86400,now))
    for stamp,payload in rows:
     day=datetime.fromtimestamp(stamp,timezone.utc).date().isoformat()
     if day in seen: continue
@@ -40,4 +40,5 @@ class Audit:
   payload=json.dumps({'exchange':state.get('exchange'),'status':state.get('status'),'results':entries},ensure_ascii=False,allow_nan=False)
   with closing(sqlite3.connect(self.path,timeout=5)) as db, db:
    db.execute('CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, timestamp REAL NOT NULL, payload TEXT NOT NULL)')
+   db.execute('CREATE INDEX IF NOT EXISTS scans_timestamp_idx ON scans(timestamp DESC,id DESC)')
    db.execute('INSERT INTO scans(timestamp,payload) VALUES (?,?)',(time.time(),payload))
