@@ -68,7 +68,7 @@ class FuturesScanner:
   with self.lock:
    generation=self.generation
    self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
-  self.event('شروع دریافت داده بازار از '+self.exchange_id)
+  self.event('شروع دریافت داده بازار از منبع عمومی')
   try:
    ex=self.client()
    if self.market_cache is not None and time.monotonic()-self.market_cache_time<300:
@@ -107,12 +107,16 @@ class FuturesScanner:
         else: data['missing'].append(key)
        except Exception: data['missing'].append(key)
       else: data['missing'].append(key)
-     data['diagnostics']=diagnostics.evaluate_votes(rows)
+     try: data['diagnostics']=diagnostics.evaluate_votes(rows)
+     except Exception:
+      data['diagnostics']=None; data['missing'].append('diagnostics'); self.event(symbol+' · ارزیابی تاریخی در دسترس نیست','error')
      if feed is None:
       try: feed=headlines.fetch() if self.factory is None else []
       except Exception: feed=False; self.event('دریافت خبر ناموفق بود','error')
      observed=time.time()
-     news=headlines.feature(feed,symbol,observed) if feed is not False else {'available':False,'vote':0,'headlines':[]}
+     try: news=headlines.feature(feed,symbol,observed) if feed is not False else {'available':False,'vote':0,'headlines':[]}
+     except Exception:
+      news={'available':False,'vote':0,'headlines':[]}; self.event(symbol+' · پردازش خبر ناموفق بود','error')
      data['news']=news
      flow=None
      if hasattr(ex,'flow'):
@@ -122,7 +126,9 @@ class FuturesScanner:
      data['checked_at']=time.time()
      extra_votes=[{'name':'Large public prints','vote':flow['vote']}] if flow else []
      if self.factory is None:
-      data['adaptive']=learner.observe(Path(__file__).resolve().parent/'data'/'learning.sqlite3',self.exchange_id,symbol,rows,data['agents']+extra_votes,news['vote'],time.time())
+      try: data['adaptive']=learner.observe(Path(__file__).resolve().parent/'data'/'learning.sqlite3',self.exchange_id,symbol,rows,data['agents']+extra_votes,news['vote'],time.time())
+      except Exception:
+       data['missing'].append('adaptive'); self.event(symbol+' · ارزیابی تطبیقی در دسترس نیست','error')
      data['missing']+=['order_book','whale_attribution']
      if not news['available']: data['missing'].append('news')
      results.append(data)

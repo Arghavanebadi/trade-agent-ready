@@ -42,7 +42,7 @@ def evaluate(rows, now=None):
     momentum=1 if 50<x['rsi']<70 else -1 if x['rsi']<40 or x['rsi']>=75 else 0
     breakout=1 if p>x['high20'] else -1 if p<x['low20'] else 0
     meanvote=1 if p<x['mean20']-2*x['sd20'] else -1 if p>x['mean20']+2*x['sd20'] else 0
-    volumevote=(1 if x['return5']>0 else -1) if x['volume_ratio']>1.2 else 0
+    volumevote=(1 if x['return5']>0 else -1 if x['return5']<0 else 0) if x['volume_ratio']>1.2 else 0
     pricevote=1 if x['return5']>1 else -1 if x['return5'] < -1 else 0
     high14=max(row['high'] for row in rows[-14:]); low14=min(row['low'] for row in rows[-14:])
     stochastic=100*(p-low14)/(high14-low14) if high14>low14 else 50

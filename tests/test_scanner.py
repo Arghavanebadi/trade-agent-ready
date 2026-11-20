@@ -51,6 +51,21 @@ class Tests(unittest.TestCase):
  def test_incomplete_candle_is_not_used(self):
   rows=sample(); now=time.time(); rows[-1]['time']=int(now//3600)*3600
   self.assertFalse(research.evaluate(rows,now=now)['valid'])
+ def test_high_volume_with_flat_return_has_no_directional_vote(self):
+  rows=sample(); price=rows[-6]['close']
+  rows[-1].update(open=price,high=price+.3,low=price-.3,close=price,volume=10000)
+  result=research.evaluate(rows,now=time.time())
+  agent=next(agent for agent in result['agents'] if agent['name']=='Volume analyst')
+  self.assertEqual(agent['status'],'بالا'); self.assertEqual(agent['vote'],0)
+ def test_optional_analysis_failures_preserve_valid_market_report(self):
+  scan=FuturesScanner(); scan.symbols=['BTC/USDT:USDT']
+  with patch.object(scan,'client',return_value=FakeExchange()), patch('scanner.diagnostics.evaluate_votes',side_effect=RuntimeError('diagnostics failed')), patch('scanner.headlines.fetch',return_value=[]), patch('scanner.headlines.feature',side_effect=RuntimeError('news failed')), patch('scanner.learner.observe',side_effect=RuntimeError('database failed')):
+   result=scan.run_once()
+  self.assertEqual(result['status'],'running'); report=result['results'][0]
+  self.assertEqual(len(report['agents']),15); self.assertIsNone(report['diagnostics'])
+  self.assertFalse(report['news']['available'])
+  self.assertTrue({'diagnostics','news','adaptive'}.issubset(report['missing']))
+  self.assertTrue(any(event['level']=='error' for event in scan.get()['activity']))
  def test_backtest_next_open(self):
   rows=sample(); calls=[]
   def signal(history): calls.append(len(history));return {'action':'WATCH_LONG' if len(history)==61 else 'NO_SIGNAL'}
