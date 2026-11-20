@@ -1,9 +1,10 @@
-﻿import json, os
+import json, os
 import risk_profile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 from scanner import FuturesScanner
+from audit import Audit
 
 ROOT=Path(__file__).resolve().parent
 scanner=FuturesScanner()
@@ -24,8 +25,11 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,AttributeError): self.send_error(400,'Invalid request')
  def do_GET(self):
   route=urlparse(self.path).path
-  if route=='/api/scan':
-   body=json.dumps(scanner.get(),ensure_ascii=False,allow_nan=False).encode('utf-8'); mime='application/json; charset=utf-8'
+  if route in ('/api/scan','/api/reports'):
+   try:
+    data=scanner.get() if route=='/api/scan' else {'reports':Audit(ROOT/'data'/'audit.sqlite3').recent()}
+    body=json.dumps(data,ensure_ascii=False,allow_nan=False).encode('utf-8'); mime='application/json; charset=utf-8'
+   except (OSError, ValueError, __import__('sqlite3').Error): self.send_error(503,'Reports unavailable'); return
   else:
    files={'/':'index.html','/style.css':'style.css','/app.js':'app.js'}
    if route not in files: self.send_error(404); return
