@@ -56,3 +56,27 @@ class ProgressiveTests(unittest.TestCase):
   self.assertFalse(worker.is_alive())
   self.assertEqual(scan.get()['results'],[])
   self.assertEqual(scan.get()['focus'],'ETH/USDT:USDT')
+
+ def test_role_results_are_published_only_after_validated_analysis(self):
+  waiting=threading.Event(); release=threading.Event()
+  class SlowSupplement(FakeExchange):
+   def fetch_funding_rate(self,symbol):
+    waiting.set(); release.wait(3)
+    return super().fetch_funding_rate(symbol)
+  scan=FuturesScanner(factory=SlowSupplement); scan.symbols=['BTC/USDT:USDT']
+  scan.request_analysis('BTC/USDT:USDT')
+  worker=threading.Thread(target=scan.run_once); worker.start()
+  try:
+   self.assertTrue(waiting.wait(3)); progress=scan.get()['progress']
+   self.assertEqual(progress['stage'],'enriching'); self.assertEqual(progress['symbol'],'BTC/USDT:USDT')
+   self.assertEqual(len(progress['agents']),15); self.assertEqual(scan.get()['results'],[])
+   scan.request_analysis('BTC/USDT:USDT')
+   self.assertEqual(scan.get()['progress']['agents'],[])
+  finally:
+   release.set(); worker.join(5)
+  self.assertFalse(worker.is_alive()); self.assertEqual(scan.get()['results'],[])
+
+ def test_partial_role_results_expire_with_their_source_candle(self):
+  scan=FuturesScanner(factory=FakeExchange)
+  scan.data['progress']={'symbol':'BTC/USDT:USDT','stage':'enriching','agents':[{'role':'test'}], 'agents_at':time.time(),'last_candle':time.time()-10000}
+  self.assertEqual(scan.get()['progress']['agents'],[])

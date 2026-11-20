@@ -43,6 +43,8 @@ class FuturesScanner:
   result['symbols']=self.catalog[:] or self.symbols[:]
   now=time.time()
   result['results']=[item for item in result['results'] if 0<=now-item.get('checked_at',0)<=900 and 0<=now-(item.get('last_candle',0)+3600)<=4500]
+  progress=result['progress']
+  if progress.get('agents') and not (0<=now-progress.get('agents_at',0)<=900 and 0<=now-(progress.get('last_candle',0)+3600)<=4500): progress['agents']=[]
   if result['selected']:
    result['selected']=next((item for item in result['results'] if item['symbol']==result['selected'].get('symbol')),None)
   if result['focus']:
@@ -61,13 +63,14 @@ class FuturesScanner:
    self.generation+=1
    self.data['focus']=symbol; self.data['results']=[]; self.data['selected']=None; self.data['errors']=[]; self.data['last_scan']=None
    self.data['status']='starting'
+   self.data['progress']={'completed':0,'total':0,'symbol':symbol,'stage':'queued','agents':[]}
   self.event('درخواست تحلیل مجدد '+symbol)
   self.wake_event.set()
  def run_once(self):
   now=time.time(); results=[]; errors=[]; feed=None
   with self.lock:
    generation=self.generation
-   self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
+   self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None,'stage':'catalog','agents':[]}
   self.event('شروع دریافت داده بازار از منبع عمومی')
   try:
    ex=self.client()
@@ -87,15 +90,21 @@ class FuturesScanner:
    for symbol in batch:
     with self.lock:
      if generation!=self.generation: return None
-    with self.lock: self.data['progress']['symbol']=symbol
+    with self.lock: self.data['progress'].update(symbol=symbol,stage='fetching',agents=[])
     self.event('بررسی قرارداد '+symbol)
     try:
      market=markets.get(symbol)
      if not market or not market.get('swap') or not market.get('linear') or market.get('settle')!='USDT' or market.get('active') is False: raise ValueError('قرارداد دائمی خطی USDT فعال نیست')
      raw=ex.fetch_ohlcv(symbol,'1h',limit=120)
      rows=[{'time':int(r[0]/1000),'open':r[1],'high':r[2],'low':r[3],'close':r[4],'volume':r[5]} for r in raw if r[0]/1000+3600<=now]
+     with self.lock:
+      if generation!=self.generation: return None
+      self.data['progress']['stage']='analyzing'
      analysis=research.evaluate(rows,now=now)
      if not analysis['valid']: raise ValueError('; '.join(analysis['errors']))
+     with self.lock:
+      if generation!=self.generation: return None
+      self.data['progress'].update(stage='enriching',agents=copy.deepcopy(analysis['agents']),agents_at=time.time(),last_candle=rows[-1]['time'])
      indicators=analysis['indicators']; p=indicators['price']; atr=indicators['atr']; direction='LONG' if analysis['action']=='WATCH_LONG' else 'SHORT' if analysis['action']=='AVOID' else 'WAIT'
      # Direction is a research label, not an order or a performance guarantee.
      data={'symbol':symbol,'direction':direction,'votes':analysis['votes'],'positive':analysis['positive'],'negative':analysis['negative'],'price':p,'stop':p-2*atr if direction=='LONG' else p+2*atr if direction=='SHORT' else None,'target':p+3*atr if direction=='LONG' else max(0,p-3*atr) if direction=='SHORT' else None,'atr':atr,'rsi':indicators['rsi'],'last_candle':rows[-1]['time'],'candles':rows[-60:],'agents':analysis['agents'],'funding_rate':None,'open_interest':None,'missing':[]}
@@ -138,11 +147,16 @@ class FuturesScanner:
       self.data['errors']=copy.deepcopy(errors)
       self.data['last_scan']=time.time()
       self.data['agents']=copy.deepcopy(data['agents'])
+      self.data['progress'].update(stage='complete',agents=[])
      self.event(symbol+' · نتیجه '+direction)
     except Exception as e:
      error=str(e)[:200]; errors.append({'symbol':symbol,'error':error}); self.event(symbol+' · '+error,'error')
+     with self.lock:
+      if generation==self.generation:
+       self.data['errors']=copy.deepcopy(errors); self.data['progress'].update(stage='failed',agents=[])
     finally:
-     with self.lock: self.data['progress']['completed']+=1
+     with self.lock:
+      if generation==self.generation: self.data['progress']['completed']+=1
    with self.lock:
     if generation!=self.generation: return None
    candidates=[r for r in results if r['direction']!='WAIT']
@@ -158,7 +172,7 @@ class FuturesScanner:
   self.event('اسکن پایان یافت؛ '+str(len(results))+' بازار بررسی شد', 'info' if results else 'error')
   with self.lock:
    if generation!=self.generation: return None
-   self.data.update(state); self.data['progress']['symbol']=None
+   self.data.update(state); self.data['progress'].update(symbol=None,stage='idle',agents=[])
    display=selected if results else None
    if not display and results: display=results[0]
    if display:
