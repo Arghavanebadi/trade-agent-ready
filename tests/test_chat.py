@@ -23,3 +23,10 @@ class Chat(unittest.TestCase):
             self.assertEqual(answer['mode'],'local')
             self.assertIn('قیمت کندل بسته',answer['answer'])
             self.assertIn('تضمین سود نیستند',answer['answer'])
+    def test_online_conversation_does_not_send_stale_report(self):
+        out=dict(status='completed',output=[dict(type='message',content=[dict(type='output_text',text='پاسخ')])])
+        with patch.dict('os.environ',XAI_API_KEY='test'),patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(out).encode())) as call:
+            answer=analyst.reply(self.state,self.req,11000)
+            self.assertEqual(answer['mode'],'ai')
+            payload=json.loads(call.call_args.args[0].data)
+            self.assertIsNone(json.loads(payload['input'][0]['content'])['current_report'])

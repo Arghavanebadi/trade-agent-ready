@@ -42,19 +42,20 @@ def reply(state, request, now=None):
     symbol=request.get('symbol')
     if symbol not in state['symbols']: raise ValueError('symbol')
     result=next((r for r in state['results'] if r['symbol']==symbol),None)
-    if (not result or state['status'] in ('error','stale') or
+    fresh = not (not result or state['status'] in ('error','stale') or
         not 0<=now-result.get('checked_at',0)<=900 or
-        not 0<=now-(result.get('last_candle',0)+3600)<=4500):
+        not 0<=now-(result.get('last_candle',0)+3600)<=4500)
+    key=os.getenv('XAI_API_KEY')
+    if not fresh and not key:
         return {'mode':'no_data','answer':'برای این قرارداد گزارش تازه‌ای ندارم. «شروع تحلیل» را بزنید و پس از پایان بررسی دوباره بپرسید.'}
     expert=request.get('expert','')
-    if expert and expert not in [a['name'] for a in result['agents']]: raise ValueError('expert')
+    if expert and expert not in [a['name'] for a in (result or {}).get('agents',state.get('agents',[]))]: raise ValueError('expert')
     hist=request.get('history',[])
     if not isinstance(hist,list) or len(hist)>6: raise ValueError('history')
     for msg in hist:
         if not isinstance(msg,dict) or msg.get('role') not in ('user','assistant') or not isinstance(msg.get('content'),str) or len(msg['content'])>1600: raise ValueError('history')
-    ctx={k:result.get(k) for k in ('symbol','checked_at','last_candle','direction','price','positive','negative','stop','target','agents','missing','flow','adaptive','news','funding_rate','open_interest')}
-    stamp={'symbol':symbol,'checked_at':result['checked_at']}
-    key=os.getenv('XAI_API_KEY')
+    ctx={k:result.get(k) for k in ('symbol','checked_at','last_candle','direction','price','positive','negative','stop','target','agents','missing','flow','adaptive','news','funding_rate','open_interest')} if fresh else None
+    stamp={'symbol':symbol,'checked_at':result['checked_at']} if fresh else {'symbol':symbol}
     if not key:
         return {**stamp,'mode':'local','answer':local_report(result, expert)}
     payload={'model':os.getenv('GROK_MODEL') or 'grok-4.7','store':False,'max_output_tokens':1800,'instructions':SYSTEM,

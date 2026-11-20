@@ -1,5 +1,5 @@
 import json, os
-import risk_profile, analyst
+import risk_profile, analyst, news_digest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -8,6 +8,7 @@ from audit import Audit
 
 ROOT=Path(__file__).resolve().parent
 scanner=FuturesScanner()
+news_monitor=news_digest.NewsMonitor()
 def public_error(message):
  text=str(message).lower()
  if '403' in text or 'forbidden' in text: return 'منبع بازار دسترسی را رد کرد (HTTP 403). اتصال و دسترسی شبکه را بررسی کنید.'
@@ -36,9 +37,9 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,AttributeError): self.send_error(400,'Invalid request')
  def do_GET(self):
   route=urlparse(self.path).path
-  if route in ('/api/scan','/api/reports'):
+  if route in ('/api/scan','/api/reports','/api/news'):
    try:
-    data=scanner.get() if route=='/api/scan' else {'reports':Audit(ROOT/'data'/'audit.sqlite3').recent()}
+    data=scanner.get() if route=='/api/scan' else news_monitor.get() if route=='/api/news' else {'reports':Audit(ROOT/'data'/'audit.sqlite3').recent()}
     if route=='/api/scan':
      venue=data.pop('exchange','')
      data['ticker_supported']=venue=='bybit'
@@ -51,7 +52,7 @@ class Handler(BaseHTTPRequestHandler):
      for result in data.get('results',[]):
       news=result.get('news',{})
       if venue: news['headlines']=[t for t in news.get('headlines',[]) if venue.lower() not in t.lower()]
-    else:
+    elif route=='/api/reports':
      for entry in data['reports']: entry['report'].pop('exchange',None)
     body=json.dumps(data,ensure_ascii=False,allow_nan=False).encode('utf-8'); mime='application/json; charset=utf-8'
    except (OSError, ValueError, __import__('sqlite3').Error): self.send_error(503,'Reports unavailable'); return
@@ -62,7 +63,7 @@ class Handler(BaseHTTPRequestHandler):
   self.send_response(200); self.send_header('Content-Type',mime); self.send_header('Content-Length',str(len(body))); self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff'); self.end_headers(); self.wfile.write(body)
 
 if __name__=='__main__':
- scanner.start(); port=int(os.getenv('PORT','8765')); print(f'Futures intelligence: http://127.0.0.1:{port}',flush=True)
+ scanner.start(); news_monitor.start(); port=int(os.getenv('PORT','8765')); print(f'Futures intelligence: http://127.0.0.1:{port}',flush=True)
  try: ThreadingHTTPServer(('127.0.0.1',port),Handler).serve_forever()
- finally: scanner.stop()
+ finally: scanner.stop(); news_monitor.stop()
 

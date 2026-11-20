@@ -158,10 +158,14 @@ const conversations=new Map();
 let pendingChat=false;
 function paintChat(symbol){
  const log=$('dialog');log.dataset.symbol=symbol;log.replaceChildren();
- for(const m of conversations.get(symbol)||[])log.append(item('p',m.label+' · '+m.content));
+ const messages=conversations.get(symbol)||[];
+ if(!messages.length)log.append(item('p','سلام! درباره تحلیل، ریسک یا اختلاف نظر تیم از من بپرسید.','chat-empty'));
+ for(const m of messages){const bubble=item('div','',m.role==='user'?'chat-bubble from-user':'chat-bubble from-assistant');bubble.append(item('small',m.label),item('p',m.content));log.append(bubble)}
  log.scrollTop=log.scrollHeight;
 }
 $('contract').addEventListener('change',()=>paintChat($('contract').value));
+$('chat-clear').onclick=()=>{conversations.delete($('contract').value);paintChat($('contract').value)};
+$('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('ask').requestSubmit()}});
 $('chat-report').onclick=()=>{if(!pendingChat){$('question').value='یک گزارش شامل نتیجه، شواهد موافق و مخالف، ریسک و شرایط ابطال بنویس.';$('ask').requestSubmit()}};
 $('ask').onsubmit=async e=>{
  e.preventDefault();if(pendingChat)return;
@@ -177,8 +181,27 @@ $('ask').onsubmit=async e=>{
  const stamp=d.checked_at?' · گزارش '+new Date(d.checked_at*1000).toLocaleTimeString('fa-IR'):'';
  turns.push({role:'assistant',label:(labels[d.mode]||'پاسخ')+' · '+symbol+stamp,content:d.answer,keep:d.mode==='ai'});
  }catch{turns.push({role:'assistant',label:'خطا',content:'ارتباط با سرور میز برقرار نشد.',keep:false})}
- finally{pendingChat=false;btn.disabled=false;btn.textContent='بپرس';if(turns.length>40)turns.splice(0,turns.length-40);paintChat($('contract').value)}
+ finally{pendingChat=false;btn.disabled=false;btn.textContent='ارسال ↑';if(turns.length>40)turns.splice(0,turns.length-40);paintChat($('contract').value)}
 };
+
+async function refreshNews(){
+ try{
+  const response=await fetch('/api/news',{cache:'no-store'});if(!response.ok)throw Error();
+  const data=await response.json(), list=$('news-list');list.replaceChildren();
+  const states={starting:'در حال دریافت خبر…',online:'منابع متصل',partial:'بخشی از منابع در دسترس',unavailable:'دریافت خبر قطع است'};
+  $('news-status').textContent=(states[data.status]||'نامشخص')+(data.checked_at?' · '+new Date(data.checked_at*1000).toLocaleTimeString('fa-IR'):'');
+  if(!data.items.length){list.append(item('p','هنوز خبری از منابع در دسترس دریافت نشده است.','tiny'));return}
+  for(const news of data.items){
+   const card=item('article','','news-item');const meta=item('div','','news-meta');
+   meta.append(item('span',news.critical?'🔴 نیاز به بررسی فوری':'◉ خبر تازه',news.critical?'news-critical':''),item('span',news.source+' · '+new Date(news.published_at*1000).toLocaleString('fa-IR')));
+   const link=item('a',news.title,'news-title');link.href=news.url;link.target='_blank';link.rel='noopener noreferrer';link.dir='auto';
+   card.append(meta,link,item('p',news.summary||'خلاصه فارسی خودکار در دسترس نیست؛ تیتر اصلی را بخوانید.','news-summary'));
+   if(news.impact)card.append(item('p','اثر احتمالی: '+news.impact,'tiny'));
+   list.append(card);
+  }
+ }catch{$('news-status').textContent='ارتباط با سرور قطع است'}
+}
+refreshNews();setInterval(refreshNews,30000);
 var stream,streamKey,lastTick=0,retryAt=0;
 function clearTick(note){lastTick=0;$('tick-price').textContent='—';$('tick-status').textContent=note}
 function startTicker(symbol,allowed){let key=allowed&&symbol&&symbol.endsWith('/USDT:USDT')?symbol:'';if(key===streamKey&&(stream||Date.now()<retryAt||!key))return;streamKey=key;const old=stream;stream=null;if(old)old.close();clearTick('قیمت زنده در دسترس نیست');if(!key)return;const topic='tickers.'+key.split('/')[0]+'USDT';let ws=new WebSocket('wss://stream.bybit.com/v5/public/linear');stream=ws;ws.onopen=()=>ws.send(JSON.stringify({op:'subscribe',args:[topic]}));ws.onmessage=e=>{if(stream!==ws)return;let m;try{m=JSON.parse(e.data)}catch{return}if(m.topic!==topic||!m.data?.lastPrice||Date.now()-m.ts>15000||m.ts>Date.now()+3000)return;const p=Number(m.data.lastPrice);if(p>0&&Number.isFinite(p)){lastTick=m.ts;$('tick-price').textContent=money(p)+' USDT';$('tick-status').textContent=key+' · '+new Date(lastTick).toLocaleTimeString('fa-IR')}};ws.onclose=()=>{if(stream!==ws)return;stream=null;retryAt=Date.now()+15000;clearTick('ارتباط قیمت زنده قطع است')}}
