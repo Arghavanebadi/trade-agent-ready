@@ -28,6 +28,20 @@ class Handler(BaseHTTPRequestHandler):
   if route in ('/api/scan','/api/reports'):
    try:
     data=scanner.get() if route=='/api/scan' else {'reports':Audit(ROOT/'data'/'audit.sqlite3').recent()}
+    if route=='/api/scan':
+     venue=data.pop('exchange','')
+     data['ticker_supported']=venue=='bybit'
+     link=os.getenv('CREATOR_LINKEDIN_URL','')
+     data['linkedin']=link if __import__('re').fullmatch(r'https://(?:www\.)?linkedin\.com/in/[\w%-]+/?',link) else None
+     for event in data.get('activity',[]):
+      if event.get('level')=='error': event['message']='دریافت یا ثبت داده کامل نشد'
+      elif venue: event['message']=event['message'].replace(venue,'منبع بازار')
+     for err in data.get('errors',[]): err['error']='داده معتبر در دسترس نیست'
+     for result in data.get('results',[]):
+      news=result.get('news',{})
+      if venue: news['headlines']=[t for t in news.get('headlines',[]) if venue.lower() not in t.lower()]
+    else:
+     for entry in data['reports']: entry['report'].pop('exchange',None)
     body=json.dumps(data,ensure_ascii=False,allow_nan=False).encode('utf-8'); mime='application/json; charset=utf-8'
    except (OSError, ValueError, __import__('sqlite3').Error): self.send_error(503,'Reports unavailable'); return
   else:
