@@ -35,7 +35,8 @@ class Handler(BaseHTTPRequestHandler):
    if self.path=='/api/analyze': scanner.request_analysis(data.get('symbol')); result={'ok':True}; status=202
    elif self.path=='/api/chat':
     state=scanner.get(); symbol=data.get('symbol')
-    history=Audit(ROOT/'data'/'audit.sqlite3').history(symbol) if symbol in state['symbols'] else []
+    current=next((row for row in state['results'] if row['symbol']==symbol),None)
+    history=Audit(ROOT/'data'/'audit.sqlite3').history(symbol,market=state.get('exchange'),before_candle=current.get('last_candle') if current else None) if symbol in state['symbols'] else []
     result=analyst.reply(state,data,historical=history,quota=chat_quota); status=200
    else: result=risk_profile.assess(data); status=200
    body=json.dumps(result,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)

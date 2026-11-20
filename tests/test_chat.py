@@ -23,6 +23,28 @@ class Chat(unittest.TestCase):
             self.assertEqual(answer['mode'],'local')
             self.assertIn('قیمت کندل بسته',answer['answer'])
             self.assertIn('تضمین سود نیستند',answer['answer'])
+    def test_local_report_compares_prior_closed_candle(self):
+        result=dict(self.state['results'][0],price=110)
+        reports=[{'symbol':'BTC','recorded_at':9000,'last_candle':2700,'price':100,'direction':'LONG'},
+                 {'symbol':'ETH','recorded_at':9999,'last_candle':2700,'price':1,'direction':'SHORT'},
+                 {'symbol':'BTC','recorded_at':9999,'last_candle':6300,'price':200,'direction':'SHORT'}]
+        answer=analyst.local_report(result,'',reports)
+        self.assertIn('گزارش تاریخی 1970-01-01 02:30 UTC',answer)
+        self.assertIn('+10.00٪',answer)
+        self.assertIn('داده زنده نیست',answer)
+        self.assertNotIn('SHORT؛ قیمت کندل بسته 200',answer)
+    def test_local_report_rejects_invalid_or_future_historical_data(self):
+        result=dict(self.state['results'][0],price=110)
+        reports=[{'symbol':'BTC','recorded_at':10001,'last_candle':2700,'price':100},
+                 {'symbol':'BTC','recorded_at':9000,'last_candle':float('nan'),'price':1}]
+        self.assertIn('گزارش تاریخی متمایز برای مقایسه موجود نیست',analyst.local_report(result,'',reports))
+        invalid=[{'symbol':'BTC','recorded_at':9000,'last_candle':2700,'price':float('nan')}]
+        self.assertIn('مقایسه قیمت ناموجود است',analyst.local_report(result,'',invalid))
+    def test_local_reply_includes_history(self):
+        self.state['results'][0]['price']=110
+        history=[{'symbol':'BTC','recorded_at':9000,'last_candle':2700,'price':100,'direction':'WAIT'}]
+        with patch.dict('os.environ',{'XAI_API_KEY':'','OLLAMA_MODEL':''}):
+            self.assertIn('+10.00٪',analyst.reply(self.state,self.req,10001,historical=history)['answer'])
     def test_online_conversation_does_not_send_stale_report(self):
         out=dict(status='completed',output=[dict(type='message',content=[dict(type='output_text',text='پاسخ')])])
         with patch.dict('os.environ',XAI_API_KEY='test'),patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(out).encode())) as call:

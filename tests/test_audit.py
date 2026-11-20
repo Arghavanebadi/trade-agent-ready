@@ -3,6 +3,16 @@ from pathlib import Path
 from contextlib import closing
 from audit import Audit
 class AuditTests(unittest.TestCase):
+ def test_history_filters_market_and_current_candle(self):
+  with tempfile.TemporaryDirectory() as temp:
+   audit=Audit(Path(temp)/'audit.db')
+   from unittest.mock import patch
+   for timestamp,market,candle in [(1700000000,'a',3600),(1700000010,'a',7200),(1700000020,'b',3600)]:
+    with patch('audit.time.time',return_value=timestamp):
+     audit.record({'exchange':market,'results':[{'symbol':'BTC','last_candle':candle}]})
+   history=audit.history('BTC',now=1700000030,market='a',before_candle=7200)
+   self.assertEqual(len(history),1)
+   self.assertEqual(history[0]['last_candle'],3600)
  def test_history_is_symbol_scoped_and_latest_per_day(self):
   with tempfile.TemporaryDirectory() as temp:
    audit=Audit(Path(temp)/'audit.db')

@@ -1,5 +1,6 @@
 ﻿"""Read-only analyst: ground every turn in a server-selected market snapshot."""
 import json
+import math
 import os
 import threading
 import time
@@ -14,9 +15,13 @@ SYSTEM = """به فارسی مثل تحلیل‌گر میز معامله پاس�
 برای درخواست گزارش، نتیجه، دلایل، ریسک و شرایط ابطال را کوتاه بنویس. هیچ ابزاری برای معامله نداری."""
 SYSTEM += '\nگزارش‌های تاریخی فقط برای مقایسه‌اند و داده لحظه‌ای نیستند؛ زمانشان را ذکر کن. دوستانه و دقیق با کاربر همفکری کن و اگر داده کافی نیست بگو.'
 
-def local_report(result, expert):
+def local_report(result, expert, historical=None):
+    def finite(value):
+        if not isinstance(value,(int,float)) or isinstance(value,bool): return False
+        try: return math.isfinite(value)
+        except OverflowError: return False
     def number(value):
-        return format(value, '.8g') if isinstance(value, (int, float)) else 'ناموجود'
+        return format(value, '.8g') if finite(value) else 'ناموجود'
     stamp=datetime.fromtimestamp(result['checked_at'], timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
     direction={'LONG':'تمایل صعودی پژوهشی','SHORT':'تمایل نزولی پژوهشی','WAIT':'بدون جهت کافی'}.get(result.get('direction'),'نامشخص')
     lines=[f"{result['symbol']} · {direction} · بررسی {stamp}",
@@ -32,6 +37,27 @@ def local_report(result, expert):
         lines.append(f"معاملات بزرگ عمومی در نمونه: {flow.get('count', 0)}؛ خرید {number(flow.get('buy'))}، فروش {number(flow.get('sell'))}. هویت معامله‌گران مشخص نیست.")
     else: lines.append('جریان معاملات بزرگ در دسترس نیست.')
     lines.append('داده‌های ناموجود: '+('، '.join(result.get('missing') or []) or 'موردی ثبت نشده است.'))
+    current_candle=result.get('last_candle')
+    current_checked=result.get('checked_at')
+    previous=[]
+    for report in (historical if isinstance(historical,list) else [])[:100]:
+        if not isinstance(report,dict) or report.get('symbol')!=result.get('symbol'): continue
+        recorded=report.get('recorded_at'); candle=report.get('last_candle')
+        if not (finite(recorded) and finite(candle) and finite(current_checked) and finite(current_candle)
+                and 0<=recorded<current_checked and 0<=candle<current_candle): continue
+        previous.append(report)
+    if previous:
+        old=max(previous,key=lambda r:r['recorded_at'])
+        try: old_stamp=datetime.fromtimestamp(old['recorded_at'],timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        except (OverflowError,OSError,ValueError): old_stamp='زمان نامعتبر'
+        lines.append(f"گزارش تاریخی {old_stamp}: {old.get('direction') if old.get('direction') in ('LONG','SHORT','WAIT') else 'نامشخص'}؛ قیمت کندل بسته {number(old.get('price'))}.")
+        current_price=result.get('price'); old_price=old.get('price')
+        if finite(current_price) and finite(old_price) and current_price>0 and old_price>0:
+            change=(current_price/old_price-1)*100
+            if math.isfinite(change): lines.append(f'تغییر قیمت کندل بسته نسبت به آن گزارش: {change:+.2f}٪. گزارش تاریخی داده زنده نیست.')
+        else: lines.append('مقایسه قیمت ناموجود است؛ گزارش تاریخی داده زنده نیست.')
+    else:
+        lines.append('گزارش تاریخی متمایز برای مقایسه موجود نیست.')
     lines.append('این خلاصه محلی است؛ گفت‌وگو به مدل تنظیم‌شده نیاز دارد. سطوح، سفارش یا تضمین سود نیستند.')
     return '\n'.join(lines)
 
@@ -59,7 +85,7 @@ def reply(state, request, now=None, historical=None, quota=None):
     ctx={k:result.get(k) for k in ('symbol','checked_at','last_candle','direction','price','positive','negative','stop','target','agents','missing','flow','adaptive','news','funding_rate','open_interest')} if fresh else None
     stamp={'symbol':symbol,'checked_at':result['checked_at']} if fresh else {'symbol':symbol}
     if not key and not local_model:
-        return {**stamp,'mode':'local','answer':local_report(result, expert)}
+        return {**stamp,'mode':'local','answer':local_report(result, expert, historical)}
     payload={'model':os.getenv('GROK_MODEL') or 'grok-4.7','store':False,'max_output_tokens':1800,'instructions':SYSTEM,
              'input':[{'role':'user','content':json.dumps({'question':q,'specialist':expert,'previous_turns':hist,'current_report':ctx,'historical_reports':historical or []},ensure_ascii=False)}]}
     if not SLOT.acquire(blocking=False):

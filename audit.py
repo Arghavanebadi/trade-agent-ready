@@ -5,7 +5,7 @@ from pathlib import Path
 
 class Audit:
  def __init__(self, path): self.path=Path(path)
- def history(self, symbol, now=None, days=7):
+ def history(self, symbol, now=None, days=7, market=None, before_candle=None):
   if not self.path.exists() or not isinstance(symbol,str): return []
   from datetime import datetime, timezone
   now=time.time() if now is None else now
@@ -18,7 +18,8 @@ class Audit:
     day=datetime.fromtimestamp(stamp,timezone.utc).date().isoformat()
     if day in seen: continue
     report=json.loads(payload)
-    result=next((entry for entry in report.get('results',[]) if entry.get('symbol')==symbol),None)
+    if market is not None and report.get('exchange')!=market: continue
+    result=next((entry for entry in report.get('results',[]) if entry.get('symbol')==symbol and (before_candle is None or isinstance(entry.get('last_candle'),(int,float)) and entry['last_candle']<before_candle)),None)
     if result:
      selected.append({'recorded_at':stamp,**result}); seen.add(day)
   return selected

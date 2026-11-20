@@ -56,8 +56,13 @@ def observe(path, market, symbol, rows, votes, news_vote, observed_at):
         if inserted:
             db.execute('INSERT INTO learning_versions VALUES (?,?,?)',(*key,target))
         score, = db.execute('SELECT score FROM forecasts WHERE market=? AND symbol=? AND target=?',(*key,target)).fetchone()
+        earliest = min(bars) if bars else None
+        pending_count, outside_history = db.execute('''SELECT COUNT(*), COALESCE(SUM(CASE WHEN target < ? AND target + 3600 <= ? THEN 1 ELSE 0 END), 0)
+            FROM forecasts WHERE market=? AND symbol=? AND outcome IS NULL''',(earliest,observed_at,*key)).fetchone()
+        if earliest is None: outside_history = None
         agents=[dict(name=name,samples=r['samples'],correct=r['correct'],weight=w[name],last_target=r['last_target']) for name,r in stats.items()]
         return dict(target=target,score=score,samples=settled,directional_samples=guesses,correct=hits,weights=w,
                     agents=agents, last_settled=history[0][0]+3600 if history else None,
+                    pending_count=pending_count, pending_outside_history=outside_history,
                     comparison=dict(paired=paired,adaptive_correct=adapted_hits,baseline_correct=baseline_hits),
-                    direction='WAIT' if settled<30 or abs(score)<.25 else 'LONG' if score>0 else 'SHORT')
+                    direction='WAIT' if guesses<30 or abs(score)<.25 else 'LONG' if score>0 else 'SHORT')
