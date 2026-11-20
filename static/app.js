@@ -32,14 +32,33 @@ function renderLearning(s){
 function active(){return current?.results?.find(x=>x.symbol===$('contract').value)}
 function usable(s){return s&&current?.status!=='error'&&Date.now()/1000-current.last_scan<900&&Date.now()/1000-s.last_candle<8000}
 function reason(s){return !usable(s)?'داده تازه کافی نیست؛ فعلاً بدون سیگنال.':s.symbol+' · '+s.direction+' · '+s.positive+' رأی مثبت و '+s.negative+' منفی. زمان بسته‌شدن کندل: '+new Date((s.last_candle+3600)*1000).toLocaleString('fa-IR')}
-function syncDesk(d){const s=active();if(d.linkedin){const link=item('a','LinkedIn');link.href=d.linkedin;$('linkedin').replaceChildren(link)}$('brief').textContent=reason(s);let select=$('expert'),prev=select.value;select.replaceChildren(new Option('جمع‌بندی تیم',''));for(const a of s?.agents||d.agents||[])select.add(new Option(a.role,a.name));select.value=prev;startTicker($('contract').value,d.ticker_supported)}
+function syncDesk(d){if($('dialog').dataset.symbol!==$('contract').value)paintChat($('contract').value);const s=active();if(d.linkedin){const link=item('a','LinkedIn');link.href=d.linkedin;$('linkedin').replaceChildren(link)}$('brief').textContent=reason(s);let select=$('expert'),prev=select.value;select.replaceChildren(new Option('جمع‌بندی تیم',''));for(const a of s?.agents||d.agents||[])select.add(new Option(a.role,a.name));select.value=prev;startTicker($('contract').value,d.ticker_supported)}
 $('contract').addEventListener('change',()=>{if(current)render(current)});
-$('ask').onsubmit=e=>{e.preventDefault();const q=$('question').value.trim();if(!q)return;const s=active(),a=s?.agents.find(x=>x.name===$('expert').value);let answer=reason(s);if(usable(s)){
- if(a)answer+=' | '+a.role+': '+a.status+' · '+a.detail;
- else if(/ریسک|هدف|ضرر/.test(q))answer+=' | حد مرجع '+money(s.stop)+' / هدف '+money(s.target);
- else if(/خبر/.test(q))answer+=' | '+(s.news?.headlines?.join('؛ ')||'خبر مرتبط موجود نیست');
- else answer+=' | '+s.agents.filter(x=>x.vote).map(x=>x.role+': '+x.status).join('؛ ');
-}const log=$('dialog');log.append(item('p','شما: '+q),item('p',answer));while(log.children.length>40)log.firstChild.remove();log.scrollTop=log.scrollHeight;$('question').value=''};
+const conversations=new Map();
+let pendingChat=false;
+function paintChat(symbol){
+ const log=$('dialog');log.dataset.symbol=symbol;log.replaceChildren();
+ for(const m of conversations.get(symbol)||[])log.append(item('p',m.label+' · '+m.content));
+ log.scrollTop=log.scrollHeight;
+}
+$('contract').addEventListener('change',()=>paintChat($('contract').value));
+$('chat-report').onclick=()=>{if(!pendingChat){$('question').value='یک گزارش شامل نتیجه، شواهد موافق و مخالف، ریسک و شرایط ابطال بنویس.';$('ask').requestSubmit()}};
+$('ask').onsubmit=async e=>{
+ e.preventDefault();if(pendingChat)return;
+ const symbol=$('contract').value,q=$('question').value.trim();if(!q||!symbol)return;
+ const turns=conversations.get(symbol)||[],history=turns.filter(x=>x.keep).slice(-6).map(x=>({role:x.role,content:x.content.slice(0,1600)}));
+ conversations.set(symbol,turns);turns.push({role:'user',label:'شما',content:q,keep:true});
+ $('question').value='';paintChat(symbol);pendingChat=true;
+ const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='در حال بررسی…';
+ try{
+ const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,question:q,expert:$('expert').value,history})});
+ if(!res.ok)throw Error();
+ const d=await res.json();const labels={ai:'تحلیل‌گر آنلاین',local:'خلاصه محلی',no_data:'وضعیت داده',busy:'وضعیت مدل',unavailable:'وضعیت مدل'};
+ const stamp=d.checked_at?' · گزارش '+new Date(d.checked_at*1000).toLocaleTimeString('fa-IR'):'';
+ turns.push({role:'assistant',label:(labels[d.mode]||'پاسخ')+' · '+symbol+stamp,content:d.answer,keep:d.mode==='ai'});
+ }catch{turns.push({role:'assistant',label:'خطا',content:'ارتباط با سرور میز برقرار نشد.',keep:false})}
+ finally{pendingChat=false;btn.disabled=false;btn.textContent='بپرس';if(turns.length>40)turns.splice(0,turns.length-40);paintChat($('contract').value)}
+};
 var stream,streamKey,lastTick=0,retryAt=0;
 function clearTick(note){lastTick=0;$('tick-price').textContent='—';$('tick-status').textContent=note}
 function startTicker(symbol,allowed){let key=allowed&&symbol&&symbol.endsWith('/USDT:USDT')?symbol:'';if(key===streamKey&&(stream||Date.now()<retryAt||!key))return;streamKey=key;const old=stream;stream=null;if(old)old.close();clearTick('قیمت زنده در دسترس نیست');if(!key)return;const topic='tickers.'+key.split('/')[0]+'USDT';let ws=new WebSocket('wss://stream.bybit.com/v5/public/linear');stream=ws;ws.onopen=()=>ws.send(JSON.stringify({op:'subscribe',args:[topic]}));ws.onmessage=e=>{if(stream!==ws)return;let m;try{m=JSON.parse(e.data)}catch{return}if(m.topic!==topic||!m.data?.lastPrice||Date.now()-m.ts>15000||m.ts>Date.now()+3000)return;const p=Number(m.data.lastPrice);if(p>0&&Number.isFinite(p)){lastTick=m.ts;$('tick-price').textContent=money(p)+' USDT';$('tick-status').textContent=key+' · '+new Date(lastTick).toLocaleTimeString('fa-IR')}};ws.onclose=()=>{if(stream!==ws)return;stream=null;retryAt=Date.now()+15000;clearTick('ارتباط قیمت زنده قطع است')}}

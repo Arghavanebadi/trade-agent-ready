@@ -1,5 +1,5 @@
 import json, os
-import risk_profile
+import risk_profile, analyst
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -11,15 +11,16 @@ scanner=FuturesScanner()
 class Handler(BaseHTTPRequestHandler):
  def do_POST(self):
   try:
-   if self.path not in ('/api/analyze','/api/risk-profile'): self.send_error(404); return
+   if self.path not in ('/api/analyze','/api/risk-profile','/api/chat'): self.send_error(404); return
    host=self.headers.get('Host',''); port=self.server.server_port
    allowed=(f'127.0.0.1:{port}',f'localhost:{port}')
    if host not in allowed or (self.headers.get('Origin') and self.headers['Origin'] not in tuple('http://'+x for x in allowed)): raise ValueError('درخواست نامعتبر است')
    if self.headers.get_content_type()!='application/json': raise ValueError('نوع درخواست نامعتبر است')
    length=int(self.headers.get('Content-Length','0'))
-   if length<1 or length>1024: raise ValueError('اندازه درخواست نامعتبر است')
+   if length<1 or length>(65536 if self.path=='/api/chat' else 1024): raise ValueError('اندازه درخواست نامعتبر است')
    data=json.loads(self.rfile.read(length))
    if self.path=='/api/analyze': scanner.request_analysis(data.get('symbol')); result={'ok':True}; status=202
+   elif self.path=='/api/chat': result=analyst.reply(scanner.get(),data); status=200
    else: result=risk_profile.assess(data); status=200
    body=json.dumps(result,ensure_ascii=False).encode('utf-8'); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
   except (ValueError,TypeError,AttributeError): self.send_error(400,'Invalid request')
