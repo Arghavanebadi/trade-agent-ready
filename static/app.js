@@ -243,5 +243,5 @@ document.querySelector('a[href="#preferences"]').addEventListener('click',()=>{e
 document.addEventListener('keydown',e=>{if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.target.closest('input,select,textarea,[contenteditable]')){e.preventDefault();focusMarket()}});
 const deskLinks=[...document.querySelectorAll('aside nav a')];
 for(const link of deskLinks)link.addEventListener('click',()=>{if(['#agents','#desk-chat'].includes(link.hash))document.body.classList.add('analysis-open')});
-function highlightDesk(){let active=deskLinks[0];for(const link of deskLinks){if(document.querySelector(link.hash).getBoundingClientRect().top<innerHeight*.45)active=link}for(const link of deskLinks){if(link===active)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current')}}
+function highlightDesk(){let active=deskLinks[0];for(const link of deskLinks){const section=document.querySelector(link.hash);if(section&&section.getClientRects().length&&section.getBoundingClientRect().top<innerHeight*.45)active=link}for(const link of deskLinks){if(link===active)link.setAttribute('aria-current','location');else link.removeAttribute('aria-current')}}
 addEventListener('scroll',highlightDesk,{passive:true});highlightDesk();
