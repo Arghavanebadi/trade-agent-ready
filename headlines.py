@@ -24,7 +24,9 @@ def fetch():
 
 def feature(items,symbol,now):
     asset=symbol.split('/')[0]
-    aliases=set(ALIASES.get(asset,(asset.lower(),)))
+    if asset not in ALIASES:
+        return {'source':'CoinDesk RSS','available':False,'headlines':[],'matched':0,'vote':0,'reason':'unsupported_asset'}
+    aliases=set(ALIASES[asset])
     titles=[]; total=0
     for stamp,title in items:
         words=set(re.findall(r'[a-z]+',title.lower()))

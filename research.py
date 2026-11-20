@@ -12,16 +12,23 @@ def ema(values, n):
 
 def validate(rows, now=None):
     errors = []
+    def finite_number(value):
+        if not isinstance(value, (int, float)) or isinstance(value, bool): return False
+        try: return math.isfinite(value)
+        except OverflowError: return False
+    if not isinstance(rows, list): return ['قالب کندل نامعتبر است']
+    if now is not None and not finite_number(now): return ['زمان بررسی نامعتبر است']
     if len(rows) < MIN_BARS: errors.append('حداقل ۶۰ کندل لازم است')
     previous = None
     for r in rows:
         try:
-            t = int(r['time']); o, h, l, c, v = [float(r[k]) for k in ('open','high','low','close','volume')]
-            if not all(math.isfinite(x) for x in (o,h,l,c,v)) or min(o,h,l,c) <= 0 or v < 0 or h < max(o,l,c) or l > min(o,h,c): errors.append('داده قیمت یا حجم نامعتبر است'); break
+            t = r['time']; o, h, l, c, v = [r[k] for k in ('open','high','low','close','volume')]
+            if not all(finite_number(x) for x in (t,o,h,l,c,v)) or t != int(t) or t % 3600 != 0: errors.append('قالب عدد یا زمان کندل نامعتبر است'); break
+            if min(o,h,l,c) <= 0 or v < 0 or h < max(o,l,c) or l > min(o,h,c): errors.append('داده قیمت یا حجم نامعتبر است'); break
             if previous is not None and t - previous != 3600: errors.append('فاصله یا ترتیب کندل‌ها نامعتبر است'); break
             previous = t
         except (KeyError, TypeError, ValueError, OverflowError): errors.append('قالب کندل نامعتبر است'); break
-    if rows and now is not None and (now - rows[-1]['time'] > 3*3600 or rows[-1]['time'] + 3600 > now): errors.append('آخرین کندل قدیمی یا ناتمام است')
+    if rows and now is not None and not errors and (now - rows[-1]['time'] > 3*3600 or rows[-1]['time'] + 3600 > now): errors.append('آخرین کندل قدیمی یا ناتمام است')
     return errors
 
 def indicators(rows):

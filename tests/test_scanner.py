@@ -25,6 +25,12 @@ class Tests(unittest.TestCase):
  def test_gap_and_stale(self):
   rows=sample();rows[-1]['time']-=3600;self.assertFalse(research.evaluate(rows)['valid'])
   self.assertFalse(research.evaluate(sample(),now=time.time()+86400)['valid'])
+ def test_malformed_values_fail_closed(self):
+  for field,value in [('close','100'),('volume',True),('time','bad'),('time',float('nan')),('time',123)]:
+   rows=sample(); rows[-1][field]=value
+   with self.subTest(field=field,value=value):
+    result=research.evaluate(rows,now=time.time()); self.assertFalse(result['valid']); self.assertEqual(result['agents'],[])
+  self.assertFalse(research.evaluate(None,now=time.time())['valid'])
  def test_scanner_contract_filter_and_metrics(self):
   scan=FuturesScanner(factory=FakeExchange);scan.symbols=['BTC/USDT:USDT','BAD/USDT:USDT'];result=scan.run_once()
   self.assertEqual(result['status'],'running');self.assertEqual(len(result['results']),1);self.assertEqual(len(result['errors']),1);self.assertEqual(result['results'][0]['funding_rate'],.0001);self.assertEqual(result['results'][0]['open_interest'],42)

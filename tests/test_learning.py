@@ -21,3 +21,8 @@ class ForwardTests(unittest.TestCase):
     def test_news_dedup_and_scope(self):
         news=feature([(100,'Bitcoin gains'),(100,'Bitcoin gains'),(101,'Bitcoin hack'),(99,'Solana falls')],'BTC/USDT:USDT',100)
         self.assertEqual((news['matched'],news['vote']),(1,1))
+
+    def test_ambiguous_symbol_does_not_match_common_words(self):
+        news=feature([(100,'One analyst says the market gains')],'ONE/USDT:USDT',100)
+        self.assertFalse(news['available']); self.assertEqual(news['vote'],0)
+        self.assertEqual(news['headlines'],[])
