@@ -1,6 +1,8 @@
 """Background scanner for public USDT-margined perpetual data, no order execution."""
 import copy, os, threading, time
 import research
+from audit import Audit
+from pathlib import Path
 
 ROLES = [
  ('Trend architect','روند EMA'), ('Momentum analyst','مومنتوم RSI'),
@@ -94,6 +96,10 @@ class FuturesScanner:
   except Exception as e:
    state={'status':'error','exchange':self.exchange_id,'last_scan':None,'next_scan':time.time()+self.interval,'results':[],'errors':[{'symbol':'*','error':str(e)[:200]}],'selected':None,'scope':'USDT perpetual swaps'}
    self.event('دریافت داده ناموفق بود: '+str(e)[:200],'error')
+  try:
+   Audit(Path(__file__).resolve().parent/'data'/'audit.sqlite3').record(state)
+  except Exception:
+   self.event('ثبت گزارش پایدار ناموفق بود', 'error')
   self.event('اسکن پایان یافت؛ '+str(len(results))+' بازار بررسی شد', 'info' if results else 'error')
   with self.lock:
    self.data.update(state); self.data['progress']['symbol']=None
