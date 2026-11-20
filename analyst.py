@@ -32,7 +32,7 @@ def local_report(result, expert):
         lines.append(f"معاملات بزرگ عمومی در نمونه: {flow.get('count', 0)}؛ خرید {number(flow.get('buy'))}، فروش {number(flow.get('sell'))}. هویت معامله‌گران مشخص نیست.")
     else: lines.append('جریان معاملات بزرگ در دسترس نیست.')
     lines.append('داده‌های ناموجود: '+('، '.join(result.get('missing') or []) or 'موردی ثبت نشده است.'))
-    lines.append('این خلاصه محلی است؛ برای پاسخ گفت‌وگویی کلید مدل آنلاین لازم است. سطوح، سفارش یا تضمین سود نیستند.')
+    lines.append('این خلاصه محلی است؛ گفت‌وگو به مدل تنظیم‌شده نیاز دارد. سطوح، سفارش یا تضمین سود نیستند.')
     return '\n'.join(lines)
 
 def reply(state, request, now=None, historical=None, quota=None):
@@ -80,6 +80,6 @@ def reply(state, request, now=None, historical=None, quota=None):
             if not answer or not data.get('done'): raise ValueError('incomplete response')
         return {**stamp,'mode':'ai','answer':answer}
     except Exception:
-        return {**stamp,'mode':'unavailable','answer':'پاسخ کامل از مدل آنلاین دریافت نشد. اتصال، اعتبار کلید و دسترسی مدل را بررسی کنید.'}
+        return {**stamp,'mode':'unavailable','answer':'پاسخ مدل دریافت نشد. اتصال و تنظیمات مدل را بررسی کنید.'}
     finally:
         SLOT.release()
