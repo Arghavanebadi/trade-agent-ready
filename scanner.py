@@ -1,6 +1,7 @@
 """Background scanner for public USDT-margined perpetual data, no order execution."""
 import copy, os, threading, time
 import research
+import diagnostics
 from audit import Audit
 from pathlib import Path
 
@@ -83,6 +84,7 @@ class FuturesScanner:
         else: data['missing'].append(key)
        except Exception: data['missing'].append(key)
       else: data['missing'].append(key)
+     data['diagnostics']=diagnostics.evaluate_votes(rows)
      data['missing']+=['order_book','news','whale_attribution']
      results.append(data)
      self.event(symbol+' · نتیجه '+direction)
