@@ -2,6 +2,7 @@
 import copy, os, threading, time
 import research
 import diagnostics
+import headlines, learner
 from audit import Audit
 from pathlib import Path
 
@@ -57,7 +58,7 @@ class FuturesScanner:
   self.event('درخواست تحلیل مجدد '+symbol)
   self.wake_event.set()
  def run_once(self):
-  now=time.time(); results=[]; errors=[]
+  now=time.time(); results=[]; errors=[]; feed=None
   with self.lock:
    self.data['status']='scanning'; self.data['progress']={'completed':0,'total':len(self.symbols),'symbol':None}
   self.event('شروع دریافت داده بازار از '+self.exchange_id)
@@ -85,7 +86,16 @@ class FuturesScanner:
        except Exception: data['missing'].append(key)
       else: data['missing'].append(key)
      data['diagnostics']=diagnostics.evaluate_votes(rows)
-     data['missing']+=['order_book','news','whale_attribution']
+     if feed is None:
+      try: feed=headlines.fetch() if self.factory is None else []
+      except Exception: feed=False; self.event('دریافت خبر ناموفق بود','error')
+     observed=time.time()
+     news=headlines.feature(feed,symbol,observed) if feed is not False else {'available':False,'vote':0,'headlines':[]}
+     data['news']=news
+     if self.factory is None:
+      data['adaptive']=learner.observe(Path(__file__).resolve().parent/'data'/'learning.sqlite3',self.exchange_id,symbol,rows,data['agents'],news['vote'],observed)
+     data['missing']+=['order_book','whale_attribution']
+     if not news['available']: data['missing'].append('news')
      results.append(data)
      self.event(symbol+' · نتیجه '+direction)
     except Exception as e:
