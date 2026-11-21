@@ -13,9 +13,9 @@ SYSTEM = """به فارسی روان و خودمانی، مثل یک تحلیل�
 جواب مستقیم، شواهد عددی و شواهد مخالف را بیان کن. قیمت کندل را قیمت زنده معرفی نکن. نبود داده را صریح بگو.
 رأی تطبیقی، رأی تکنیکال و جریان معاملات بزرگ را از هم تفکیک کن. هویت نهنگ، احتمال برد، سفارش یا قطعیت نساز.
 برای درخواست گزارش، حداکثر در چند بند کوتاه با عنوان‌های «جمع‌بندی»، «چرا؟» و «حواسمون باشه» نتیجه، شواهد موافق و مخالف و ریسک را توضیح بده؛ شرایط ابطال را فقط اگر مستند است بیان کن. درباره سؤال‌های دیگر مستقیم و متناسب با سؤال جواب بده. از کلی‌گویی، تکرار، وعده سود و لحن تبلیغاتی پرهیز کن. هیچ ابزاری برای معامله نداری."""
-SYSTEM += '\nگزارش‌های تاریخی فقط برای مقایسه‌اند و داده لحظه‌ای نیستند؛ زمانشان را ذکر کن. دوستانه و دقیق با کاربر همفکری کن و اگر داده کافی نیست بگو.'
+SYSTEM += '\nگزارش‌های تاریخی فقط برای مقایسه‌اند و داده لحظه‌ای نیستند؛ زمانشان را ذکر کن. دوستانه و دقیق با کاربر همفکری کن و اگر داده کافی نیست بگو. اگر سطح ریسک اختیاری داده شد، در توضیح احتیاط آن را لحاظ کن؛ آن را تأیید مناسب‌بودن معامله تلقی نکن.'
 
-def local_report(result, expert, historical=None):
+def local_report(result, expert, historical=None, risk_level=None):
     def finite(value):
         if not isinstance(value,(int,float)) or isinstance(value,bool): return False
         try: return math.isfinite(value)
@@ -33,6 +33,9 @@ def local_report(result, expert, historical=None):
         lines.append(f"{agent.get('role', agent.get('name', 'تحلیلگر'))}: {agent.get('status', 'نامشخص')}؛ {agent.get('detail', 'بدون جزئیات')}")
     if not selected: lines.append('شواهد جهت‌دار کافی در گزارش موجود نیست.')
     lines.append(f"🛡️ حواسمون باشه: حد مرجع / هدف مرجع {number(result.get('stop'))} / {number(result.get('target'))} است.")
+    if risk_level:
+        labels={'low':'کم','moderate':'متوسط','high':'بالا'}
+        lines.append('پروفایل ریسک ثبت‌شده: '+labels[risk_level]+'؛ این برآورد مناسب‌بودن معامله را تأیید نمی‌کند.')
     flow=result.get('flow')
     if isinstance(flow, dict):
         lines.append(f"معاملات بزرگ عمومی در نمونه: {flow.get('count', 0)}؛ خرید {number(flow.get('buy'))}، فروش {number(flow.get('sell'))}. هویت معامله‌گران مشخص نیست.")
@@ -68,6 +71,8 @@ def reply(state, request, now=None, historical=None, quota=None):
     if not isinstance(q,str) or not 0<len(q.strip())<=800:
         raise ValueError('question')
     symbol=request.get('symbol')
+    risk_level=request.get('risk_level')
+    if risk_level is not None and risk_level not in ('low','moderate','high'): raise ValueError('risk_level')
     if symbol not in state['symbols']: raise ValueError('symbol')
     result=next((r for r in state['results'] if r['symbol']==symbol),None)
     fresh = not (not result or state['status'] in ('error','stale') or
@@ -86,9 +91,9 @@ def reply(state, request, now=None, historical=None, quota=None):
     ctx={k:result.get(k) for k in ('symbol','checked_at','last_candle','direction','price','positive','negative','stop','target','agents','missing','flow','adaptive','news','funding_rate','open_interest')} if fresh else None
     stamp={'symbol':symbol,'checked_at':result['checked_at']} if fresh else {'symbol':symbol}
     if not key and not local_model:
-        return {**stamp,'mode':'local','answer':local_report(result, expert, historical)}
+        return {**stamp,'mode':'local','answer':local_report(result, expert, historical, risk_level)}
     payload={'model':os.getenv('GROK_MODEL') or 'grok-4.7','store':False,'max_output_tokens':1800,'instructions':SYSTEM,
-             'input':[{'role':'user','content':json.dumps({'question':q,'specialist':expert,'previous_turns':hist,'current_report':ctx,'historical_reports':historical or []},ensure_ascii=False)}]}
+             'input':[{'role':'user','content':json.dumps({'question':q,'specialist':expert,'previous_turns':hist,'current_report':ctx,'historical_reports':historical or [],'risk_level':risk_level},ensure_ascii=False)}]}
     if not SLOT.acquire(blocking=False):
         return {'mode':'busy','answer':'تحلیل‌گر مشغول پاسخ‌گویی است؛ کمی بعد دوباره بپرسید.'}
     try:

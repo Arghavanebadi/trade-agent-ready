@@ -17,6 +17,14 @@ class Chat(unittest.TestCase):
             self.assertEqual(analyst.reply(self.state,self.req,10001)['mode'],'ai')
             payload=json.loads(call.call_args.args[0].data)
             self.assertEqual(json.loads(payload['input'][0]['content'])['current_report']['symbol'],'BTC')
+    def test_optional_risk_level_and_validation(self):
+        out=dict(status='completed',output=[dict(type='message',content=[dict(type='output_text',text='analysis')])])
+        with patch.dict('os.environ',{'XAI_API_KEY':'test'}),patch('urllib.request.urlopen',return_value=io.BytesIO(json.dumps(out).encode())) as call:
+            analyst.reply(self.state,dict(self.req,risk_level='low'),10001)
+            context=json.loads(json.loads(call.call_args.args[0].data)['input'][0]['content'])
+            self.assertEqual(context['risk_level'],'low')
+            self.assertNotIn('answers',context)
+            with self.assertRaises(ValueError): analyst.reply(self.state,dict(self.req,risk_level='invalid'),10001)
     def test_no_key(self):
         with patch.dict('os.environ',XAI_API_KEY=''):
             answer=analyst.reply(self.state,self.req,10001)

@@ -48,6 +48,7 @@ function renderWorkflow(data,result){
 }
 const profileKey='ebadi-risk-profile-v1';let personalProfile=null;
 try{const stored=JSON.parse(localStorage.getItem(profileKey)||'null');if(stored&&['low','moderate','high'].includes(stored.level)&&typeof stored.name==='string')personalProfile=stored}catch(error){personalProfile=null}
+const riskConsent=item('label','','risk-consent');const riskConsentInput=document.createElement('input');riskConsentInput.type='checkbox';riskConsent.append(riskConsentInput,document.createTextNode(' استفاده از سطح ریسک در گفتگو (در حالت آنلاین به ارائه‌دهنده مدل ارسال می‌شود)'));$('ask').before(riskConsent);
 function profileAdvice(result){
  if(!personalProfile)return 'پروفایل ریسک تکمیل نشده است.';
  const label={low:'کم',moderate:'متوسط',high:'بالا'}[personalProfile.level];
@@ -199,7 +200,7 @@ $('ask').onsubmit=async e=>{
  $('question').value='';saveChats();paintChat(symbol);pendingChat=true;
  const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='در حال بررسی…';
  try{
- const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,question:q,expert:$('expert').value,history})});
+ const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,question:q,expert:$('expert').value,history,risk_level:riskConsentInput.checked?personalProfile?.level||null:null})});
  if(!res.ok)throw Error();
  const d=await res.json();const labels={ai:'دستیار تحلیلی',local:'خلاصه محلی',no_data:'وضعیت داده',busy:'وضعیت مدل',unavailable:'وضعیت مدل',quota:'سقف روزانه'};
  const stamp=d.checked_at?' · گزارش '+new Date(d.checked_at*1000).toLocaleTimeString('fa-IR'):'';
