@@ -1,5 +1,5 @@
 """Background scanner for public USDT-margined perpetual data, no order execution."""
-import copy, json, os, tempfile, threading, time
+import copy, json, os, tempfile, threading, time, urllib.parse, urllib.request
 import research
 import diagnostics
 import headlines, learner
@@ -19,11 +19,21 @@ ROLES = [
 CATALOG_PATH=Path(__file__).resolve().parent/'data'/'market_catalog.json'
 CATALOG_MAX_AGE=24*3600
 POPULAR_BASES=('BTC','ETH','SOL','BNB','XRP','DOGE','ADA','AVAX','LINK','DOT')
+MARKET_CAP_IDS={'BTC':'bitcoin','ETH':'ethereum','SOL':'solana','BNB':'binancecoin','XRP':'ripple','DOGE':'dogecoin','ADA':'cardano','AVAX':'avalanche-2','LINK':'chainlink','DOT':'polkadot','TRX':'tron','TON':'the-open-network','LTC':'litecoin','BCH':'bitcoin-cash','SUI':'sui','UNI':'uniswap','NEAR':'near','AAVE':'aave','ATOM':'cosmos','XLM':'stellar'}
 
-def rank_markets(symbols, turnover=None):
+def fetch_market_caps():
+ params=urllib.parse.urlencode({'vs_currency':'usd','ids':','.join(MARKET_CAP_IDS.values()),'per_page':100,'page':1})
+ request=urllib.request.Request('https://api.coingecko.com/api/v3/coins/markets?'+params,headers={'Accept':'application/json','User-Agent':'EbadiMarketDesk/1.0'})
+ with urllib.request.urlopen(request,timeout=8) as response: rows=json.load(response)
+ if not isinstance(rows,list): raise ValueError('Invalid market-cap response')
+ ids={value:key for key,value in MARKET_CAP_IDS.items()}
+ return {ids[row['id']]:{'rank':row['market_cap_rank'],'market_cap':row['market_cap']} for row in rows if isinstance(row,dict) and row.get('id') in ids and isinstance(row.get('market_cap_rank'),int) and row['market_cap_rank']>0 and isinstance(row.get('market_cap'),(int,float)) and row['market_cap']>0}
+
+def rank_markets(symbols, turnover=None, market_caps=None):
  turnover=turnover or {}
+ market_caps=market_caps or {}
  fallback={base:index for index,base in enumerate(POPULAR_BASES)}
- return sorted(symbols,key=lambda symbol:(0,-turnover[symbol],symbol) if symbol in turnover else (1,fallback.get(symbol.split('/')[0],len(fallback)),symbol))
+ return sorted(symbols,key=lambda symbol:(0,market_caps[symbol.split('/')[0]]['rank'],symbol) if symbol.split('/')[0] in market_caps else (1,-turnover[symbol],symbol) if symbol in turnover else (2,fallback.get(symbol.split('/')[0],len(fallback)),symbol))
 
 def read_catalog(path,exchange,now):
  try:
@@ -53,6 +63,7 @@ class FuturesScanner:
   self.factory=factory; self.lock=threading.RLock(); self.stop_event=threading.Event(); self.wake_event=threading.Event(); self.thread=None
   self.exchange_id=os.getenv('EXCHANGE_ID','bybit'); self.symbols=[s.strip() for s in os.getenv('FUTURES_SYMBOLS','BTC/USDT:USDT,ETH/USDT:USDT,SOL/USDT:USDT').split(',') if s.strip()][:20]
   self.catalog=[]; self.rotation=0; self.generation=0; self.market_cache=None; self.market_cache_time=0
+  self.market_caps={}; self.market_caps_checked_at=0; self.market_caps_attempted_at=0
   self.market_cache_checked_at=0
   try: self.interval=max(60,int(os.getenv('SCAN_INTERVAL_SECONDS','300')))
   except ValueError: self.interval=300
@@ -132,13 +143,22 @@ class FuturesScanner:
      with self.lock: self.data.update(catalog_status='cached',catalog_checked_at=self.market_cache_checked_at)
      self.event('فهرست بازار از نسخه ذخیره‌شده استفاده می‌کند؛ وضعیت قرارداد ممکن است تغییر کرده باشد.','warning')
    universe=sorted(k for k,m in markets.items() if m.get('swap') and m.get('linear') and m.get('settle')=='USDT' and m.get('active') is not False)
+   if self.factory is None and time.time()-self.market_caps_attempted_at>=900:
+    self.market_caps_attempted_at=time.time()
+    try:
+     caps=fetch_market_caps()
+     if not caps: raise ValueError('Empty market-cap response')
+     self.market_caps=caps; self.market_caps_checked_at=time.time()
+    except Exception: self.event('ارزش بازار فعلاً در دسترس نیست؛ از داده موجود استفاده می‌شود.','warning')
+   caps=self.market_caps if 0<=time.time()-self.market_caps_checked_at<=3600 else {}
    turnover={}
    if hasattr(ex,'popularity'):
     try: turnover=ex.popularity()
     except Exception: self.event('ترتیب حجم معاملات در دسترس نیست؛ ترتیب پیش‌فرض نمایش داده می‌شود.','warning')
    with self.lock:
-    self.catalog=rank_markets(universe,turnover)
-    self.data['catalog_order']='turnover' if turnover else 'fallback'
+    self.catalog=rank_markets(universe,turnover,caps)
+    self.data['market_caps']=caps; self.data['market_caps_checked_at']=self.market_caps_checked_at if caps else None
+    self.data['catalog_order']='market_cap' if caps else 'turnover' if turnover else 'fallback'
     extra=(universe[self.rotation:]+universe[:self.rotation])[:3] if not self.factory else []
     self.rotation=(self.rotation+len(extra))%max(1,len(universe))
     batch=list(dict.fromkeys(filter(None,[self.data['focus'],*self.symbols,*extra])))

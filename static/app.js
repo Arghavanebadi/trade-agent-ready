@@ -234,11 +234,14 @@ setInterval(()=>{if(lastTick&&Date.now()-lastTick>15000)clearTick('قیمت به
 function downloadHtml(){if(!current)return;const doc=document.implementation.createHTMLDocument('گزارش میز معامله‌گر | ebadi');doc.documentElement.lang='fa';doc.documentElement.dir='rtl';const main=document.querySelector('main').cloneNode(true);main.querySelectorAll('form,button,.preferences,.profile-panel,.follow-panel,.choose-controls').forEach(x=>x.remove());doc.body.append(main);const meta=doc.createElement('meta');meta.charset='utf-8';doc.head.prepend(meta);const style=doc.createElement('style');style.textContent='body{font:16px/1.8 Tahoma,Arial,sans-serif;max-width:900px;margin:auto;padding:2rem;color:#252354;background:#f5f4ff}section,article{background:#fff;border:1px solid #dddafa;border-radius:14px;padding:16px;margin:12px 0}h1,h2,h3,a{color:#5641b9}small{display:block;color:#5d6384}';doc.head.append(style);doc.body.prepend(item('p','نسخه ثابت گزارش · '+new Date().toLocaleString('fa-IR')));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['<!doctype html>'+doc.documentElement.outerHTML],{type:'text/html;charset=utf-8'}));a.download='ebadi-market-report.html';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 
 function fillMarkets(select,symbols){
- const q=$('search-market').value.trim().toUpperCase(), matches=symbols.filter(x=>x.includes(q)), signature=matches.join('|');
- const catalogNote=current?.catalog_status==='cached'?'فهرست ذخیره‌شده از '+new Date(current.catalog_checked_at*1000).toLocaleString('fa-IR')+'؛ وضعیت قرارداد ممکن است تغییر کرده باشد.':current?.catalog_status==='live'?'فهرست به‌روز بازار.':'فهرست اولیه؛ قراردادها هنوز تأیید نشده‌اند.';
- $('market-count').textContent='نماد در فهرست: '+symbols.length.toLocaleString('fa-IR')+' · نتیجه جست‌وجو: '+matches.length.toLocaleString('fa-IR')+' · '+(current?.catalog_order==='turnover'?'ترتیب بر اساس ارزش معاملات ۲۴ ساعته':'ترتیب پیش‌فرض؛ رتبه زنده در دسترس نیست')+' · '+catalogNote;
+ const q=$('search-market').value.trim().toUpperCase(), matches=symbols.filter(x=>x.includes(q));
+ const caps=current?.market_caps||{}, results=current?.results||[];
+ const labels=matches.map(symbol=>{const cap=caps[symbol.split('/')[0]], result=results.find(row=>row.symbol===symbol&&usable(row));return (cap?'#'+cap.rank+' · ':'')+symbol.split('/')[0]+' / USDT'+(result?' · امتیاز '+(result.votes>0?'+':'')+result.votes:'')});
+ const signature=matches.map((symbol,index)=>symbol+labels[index]).join('|');
+ const order=current?.catalog_order==='market_cap'?'ارزش بازار برای ارزهای شناخته‌شده؛ سایر ارزها بر اساس حجم':current?.catalog_order==='turnover'?'بر اساس حجم معاملات؛ ارزش بازار در دسترس نیست':'ترتیب اولیه؛ رتبه زنده در دسترس نیست';
+ $('market-count').textContent=matches.length.toLocaleString('fa-IR')+' ارز · '+order+(current?.catalog_status==='cached'?' · فهرست ذخیره‌شده':'');
  if(select.dataset.markets===signature)return;
- const prev=select.value;select.replaceChildren(...matches.map(x=>new Option(x,x)));select.dataset.markets=signature;
+ const prev=select.value;select.replaceChildren(...matches.map((symbol,index)=>new Option(labels[index],symbol)));select.dataset.markets=signature;
  if(matches.includes(prev))select.value=prev;else if(matches.includes('BTC/USDT:USDT'))select.value='BTC/USDT:USDT';
 }
 const marketCount=item('p','','tiny');marketCount.id='market-count';$('search-market').closest('.choose-panel').append(marketCount);
