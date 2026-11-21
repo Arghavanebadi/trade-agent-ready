@@ -49,29 +49,34 @@ function renderWorkflow(data,result){
 const profileKey='ebadi-risk-profile-v1';let personalProfile=null;
 try{const stored=JSON.parse(localStorage.getItem(profileKey)||'null');if(stored&&['low','moderate','high'].includes(stored.level)&&typeof stored.name==='string')personalProfile=stored}catch(error){personalProfile=null}
 const riskConsent=item('label','','risk-consent');const riskConsentInput=document.createElement('input');riskConsentInput.type='checkbox';riskConsent.append(riskConsentInput,document.createTextNode(' استفاده از سطح ریسک در گفتگو (در حالت آنلاین به ارائه‌دهنده مدل ارسال می‌شود)'));$('ask').before(riskConsent);
+document.querySelector('.choose-panel h3').textContent='بازار رو از اینجا کشف کن';
+document.querySelector('.choose-panel .tiny').textContent='ارزت رو انتخاب کن و مسیر تحلیل رو ببین';
+$('search-market').placeholder='اسم یا نماد ارز رو جست‌وجو کن…';
+document.querySelector('#desk-chat h2').textContent='💬 با تحلیل‌گرت گپ بزن';
+$('question').placeholder='هر سؤالی درباره این تحلیل داری، بپرس…';
 function profileAdvice(result){
- if(!personalProfile)return 'پروفایل ریسک تکمیل نشده است.';
+ if(!personalProfile)return 'برای اینکه نگاه گزارش با شرایطت هماهنگ‌تر باشه، پروفایل ریسک رو تکمیل کن.';
  const label={low:'کم',moderate:'متوسط',high:'بالا'}[personalProfile.level];
- if(!result||!usable(result))return 'پروفایل ریسک '+label+' · داده تازه لازم است.';
- if(result.direction==='WAIT')return 'پروفایل ریسک '+label+' · بدون سیگنال جهت‌دار.';
- if(personalProfile.level==='low')return 'ریسک کم · احتیاط؛ سیگنال صرفاً برای بررسی است.';
- if(personalProfile.level==='moderate'&&(result.direction==='LONG'?result.negative:result.positive)>0)return 'ریسک متوسط · رأی مخالف وجود دارد؛ بررسی بیشتر لازم است.';
- return 'پروفایل ریسک '+label+' · نتیجه صرفاً برای بررسی است.';
+ if(!result||!usable(result))return 'پروفایل تو: ریسک '+label+' · برای جمع‌بندی، داده تازه لازم داریم.';
+ if(result.direction==='WAIT')return 'با ریسک '+label+'، فعلاً نشانه‌ها برای نتیجه جهت‌دار کافی نیستند؛ بهتره منتظر شواهد بیشتر بمونی.';
+ if(personalProfile.level==='low')return 'با توجه به ریسک‌پذیری پایینت، این نتیجه رو با احتیاط بررسی کن؛ نوسان و اهرم می‌تونن زیان رو بزرگ‌تر کنن.';
+ if(personalProfile.level==='moderate'&&(result.direction==='LONG'?result.negative:result.positive)>0)return 'با توجه به ریسک‌پذیری متوسطت، رأی‌های مخالف رو هم ببین؛ اینجا هنوز جای بررسی بیشتر هست.';
+ return 'با ریسک‌پذیری '+label+'، قبل از هر تصمیم حد زیان و شواهد مخالف رو بررسی کن؛ این نتیجه تضمین نیست.';
 }
 function renderDecision(result){
- const title=item('div','','decision-heading');const heading=item('div','');heading.append(item('span','ANALYSIS SUMMARY','eyebrow'),item('h2','جمع‌بندی و گزارش'));title.append(heading);
+ const title=item('div','','decision-heading');const heading=item('div','');heading.append(item('span','YOUR MARKET BRIEF','eyebrow'),item('h2','جمع‌بندی برای تو'));title.append(heading);
  if(!result||!usable(result)){decisionPanel.replaceChildren(title,item('p','در انتظار گزارش معتبر.','decision-empty'),item('p',profileAdvice(null),'profile-advice'));return}
  const labels={LONG:'تمایل صعودی',SHORT:'تمایل نزولی',WAIT:'بدون سیگنال'};const signal=item('span',labels[result.direction]||'بدون سیگنال','decision-signal');signal.dataset.direction=result.direction;title.append(signal);
  const meta=item('p',result.symbol+' · آخرین بررسی '+new Date(result.checked_at*1000).toLocaleString('fa-IR')+' · قیمت کندل بسته '+money(result.price)+' USDT','decision-meta');
  const agents=Array.isArray(result.agents)?result.agents:[],positive=agents.filter(agent=>agent.vote>0),negative=agents.filter(agent=>agent.vote<0),neutral=agents.length-positive.length-negative.length;
- const brief=item('div','','friendly-brief');const headline=result.direction==='LONG'?'فعلاً نشانه‌ها بیشتر رو به بالا هستند.':result.direction==='SHORT'?'فعلاً نشانه‌ها بیشتر رو به پایین هستند.':'فعلاً نشانه‌ها برای یک جهت مشخص کافی نیستند.';brief.append(item('strong','✦ نگاه سریع'),item('p',headline+' تیم '+positive.length+' رأی مثبت و '+negative.length+' رأی منفی ثبت کرده؛ این جمع‌بندی به معنی قطعیت نیست.'));const askMore=item('button','💬 گزارش خودمونی از تحلیل‌گر','brief-action');askMore.type='button';askMore.onclick=()=>{$('desk-chat').scrollIntoView({behavior:'smooth',block:'start'});$('chat-report').click()};brief.append(askMore);
+ const brief=item('div','','friendly-brief');const headline=result.direction==='LONG'?'نشونه‌ها فعلاً بیشتر به سمت بالا متمایلن.':result.direction==='SHORT'?'نشونه‌ها فعلاً بیشتر به سمت پایین متمایلن.':'فعلاً تصویر روشنی از جهت بازار نداریم.';brief.append(item('span','✦ نبض تحلیل','brief-kicker'),item('strong',headline),item('p','تیم '+positive.length.toLocaleString('fa-IR')+' رأی مثبت و '+negative.length.toLocaleString('fa-IR')+' رأی منفی ثبت کرده. '+profileAdvice(result)));const askMore=item('button','💬 بیا بیشتر بررسی کنیم','brief-action');askMore.type='button';askMore.onclick=()=>{$('desk-chat').scrollIntoView({behavior:'smooth',block:'start'});$('chat-report').click()};brief.append(askMore);
  const votes=item('div','','vote-summary');votes.append(item('h3','توزیع رأی نقش‌ها'));
  const bar=item('div','','vote-bar');bar.setAttribute('role','img');bar.setAttribute('aria-label',positive.length+' رأی مثبت، '+negative.length+' رأی منفی و '+neutral+' خنثی یا بدون رأی');
  for(const [count,kind] of [[positive.length,'positive'],[neutral,'neutral'],[negative.length,'negative']]){const part=item('span','','vote-'+kind);part.style.width=(agents.length?count/agents.length*100:0)+'%';bar.append(part)}
  const legend=item('div','','vote-legend');for(const [label,count,kind] of [['مثبت',positive.length,'positive'],['خنثی یا بدون رأی',neutral,'neutral'],['منفی',negative.length,'negative']])legend.append(item('span',label+' '+count.toLocaleString('fa-IR'),'legend-'+kind));votes.append(bar,legend,item('p','رأی جهت‌دار، احتمال موفقیت نیست.','tiny'));
  const levels=item('div','','decision-levels');for(const [label,value] of [['قیمت مرجع',result.price],['حد مرجع',result.stop],['هدف مرجع',result.target]]){const box=item('div','','decision-level');box.append(item('small',label),item('strong',money(value)));levels.append(box)}
  const evidence=item('div','','decision-evidence');for(const [label,list] of [['شواهد مثبت',positive],['شواهد منفی',negative]]){const box=item('div','','evidence-box');box.append(item('h4',label));if(!list.length)box.append(item('p','رأیی ثبت نشده است.'));for(const agent of list.slice(0,3))box.append(item('p',agent.role+' · '+agent.detail));evidence.append(box)}
- decisionPanel.replaceChildren(title,meta,brief,item('p',profileAdvice(result),'profile-advice'),levels,votes,evidence,item('p','گزارش پژوهشی است؛ سطوح سفارش نیستند و سود را تضمین نمی‌کنند.','decision-footnote'));
+ decisionPanel.replaceChildren(title,meta,brief,levels,votes,evidence,item('p','این یک گزارش پژوهشی است؛ سطوح سفارش نیستند و سود تضمین نمی‌شود.','decision-footnote'));
 }
 function renderChart(result){
  chartArea.replaceChildren();

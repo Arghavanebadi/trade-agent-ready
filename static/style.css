@@ -210,3 +210,22 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 .brief-action:focus-visible { outline: 3px solid #5949cd; outline-offset: 3px; }
 .risk-consent { display: flex; gap: 9px; align-items: baseline; margin: 12px 0; color: #555f91; font-size: 12px; line-height: 1.8; }
 .risk-consent input { accent-color: #6d56d9; }
+
+.choose-panel { position: relative; overflow: hidden; border-radius: 28px; border-color: #cbd6ff; background: radial-gradient(ellipse at 12% 0%, #d8d7ff 0, transparent 38%), radial-gradient(ellipse at 88% 100%, #d6e9ff 0, transparent 42%), linear-gradient(140deg, #f9faff, #ecebff); box-shadow: 0 20px 50px #303d9a17; }
+.choose-panel::before { content: '✦'; position: absolute; top: 18px; inset-inline-end: 28px; color: #7666e355; font-size: 28px; pointer-events: none; }
+.choose-panel h3 { color: #222d68; letter-spacing: -.03em; }
+.choose-panel .eyebrow { display: inline-block; padding: 6px 12px; border: 1px solid #d5d9fa; border-radius: 99px; background: #ffffffa8; color: #6252be; }
+.choose-controls { position: relative; border-radius: 19px; background: #ffffffed; box-shadow: 0 16px 38px #42419a22; }
+.choose-controls .primary, .brief-action { background: linear-gradient(115deg, #345ee9, #824be0); box-shadow: 0 8px 20px #5b56d533; }
+.workflow, .decision-panel, .desk-chat, .news-digest { border: 1px solid #dce2fa; box-shadow: 0 14px 40px #343e8c0d; }
+.decision-panel { background: linear-gradient(150deg, #fff 30%, #f5f3ff); }
+.friendly-brief { position: relative; overflow: hidden; padding: clamp(20px, 3vw, 28px); border: 1px solid #cdd7ff; border-radius: 22px; background: radial-gradient(circle at 10% 0%, #dad7ff 0, transparent 38%), linear-gradient(130deg, #e7f1ff, #f4ecff); }
+.friendly-brief .brief-kicker { display: block; margin-bottom: 8px; color: #6650c7; font-size: 12px; font-weight: 700; }
+.friendly-brief strong { display: block; color: #252e73; font-size: clamp(18px, 2vw, 24px); line-height: 1.7; }
+.friendly-brief p { max-width: 70ch; color: #424d7c; }
+.decision-level, .vote-summary, .evidence-box { border-radius: 16px; box-shadow: 0 8px 22px #4047920a; }
+.wall-banner { border: 1px solid #d4dafa; background: radial-gradient(circle at 8% 0%, #d8d4ff, transparent 38%), linear-gradient(120deg, #e9f1ff, #f3ebff); }
+.agent { border-radius: 19px; box-shadow: 0 10px 28px #41468b0b; }
+.desk-chat #dialog { background: linear-gradient(150deg, #f0f4ff, #f4efff); }
+.desk-chat #dialog .from-user { background: linear-gradient(130deg, #dfeaff, #e9dfff); }
+@media (max-width: 600px) { .choose-panel { border-radius: 22px; } .friendly-brief { padding: 18px; } .brief-action { width: 100%; } }
