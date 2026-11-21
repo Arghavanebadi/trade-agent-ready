@@ -203,3 +203,8 @@ select:focus-visible, textarea:focus-visible, summary:focus-visible {
 .choose-controls select { color: #303982; font-weight: 700; cursor: pointer; }
 .choose-controls input:focus-visible, .choose-controls select:focus-visible { outline: 3px solid #7667eb; outline-offset: 2px; }
 #market-count { color: #555f91; font-size: 12px; margin: 14px auto 0; }
+.friendly-brief { margin: 18px 0; padding: 20px; border: 1px solid #d8d9fb; border-radius: 18px; background: linear-gradient(120deg, #edf2ff, #f2eaff); color: #303878; }
+.friendly-brief strong { color: #5741bc; font-size: 15px; }
+.friendly-brief p { margin: 8px 0 14px; line-height: 1.9; }
+.brief-action { border: 0; border-radius: 11px; padding: 10px 16px; color: #fff; background: linear-gradient(110deg, #426bea, #8050d4); cursor: pointer; font: inherit; }
+.brief-action:focus-visible { outline: 3px solid #5949cd; outline-offset: 3px; }

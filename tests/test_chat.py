@@ -33,6 +33,14 @@ class Chat(unittest.TestCase):
         self.assertIn('+10.00٪',answer)
         self.assertIn('داده زنده نیست',answer)
         self.assertNotIn('SHORT؛ قیمت کندل بسته 200',answer)
+    def test_local_summary_keeps_opposing_evidence(self):
+        agents=[{'name':str(index),'role':'positive'+str(index),'vote':1,'detail':'up'} for index in range(7)]
+        agents.append({'name':'opposing','role':'opposing','vote':-1,'detail':'down'})
+        result=dict(self.state['results'][0],agents=agents)
+        answer=analyst.local_report(result,'')
+        self.assertIn('positive0',answer)
+        self.assertIn('opposing',answer)
+        self.assertNotIn('positive3',answer)
     def test_local_report_rejects_invalid_or_future_historical_data(self):
         result=dict(self.state['results'][0],price=110)
         reports=[{'symbol':'BTC','recorded_at':10001,'last_candle':2700,'price':100},

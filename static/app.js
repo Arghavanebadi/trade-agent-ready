@@ -63,13 +63,14 @@ function renderDecision(result){
  const labels={LONG:'تمایل صعودی',SHORT:'تمایل نزولی',WAIT:'بدون سیگنال'};const signal=item('span',labels[result.direction]||'بدون سیگنال','decision-signal');signal.dataset.direction=result.direction;title.append(signal);
  const meta=item('p',result.symbol+' · آخرین بررسی '+new Date(result.checked_at*1000).toLocaleString('fa-IR')+' · قیمت کندل بسته '+money(result.price)+' USDT','decision-meta');
  const agents=Array.isArray(result.agents)?result.agents:[],positive=agents.filter(agent=>agent.vote>0),negative=agents.filter(agent=>agent.vote<0),neutral=agents.length-positive.length-negative.length;
+ const brief=item('div','','friendly-brief');const headline=result.direction==='LONG'?'فعلاً نشانه‌ها بیشتر رو به بالا هستند.':result.direction==='SHORT'?'فعلاً نشانه‌ها بیشتر رو به پایین هستند.':'فعلاً نشانه‌ها برای یک جهت مشخص کافی نیستند.';brief.append(item('strong','✦ نگاه سریع'),item('p',headline+' تیم '+positive.length+' رأی مثبت و '+negative.length+' رأی منفی ثبت کرده؛ این جمع‌بندی به معنی قطعیت نیست.'));const askMore=item('button','💬 گزارش خودمونی از تحلیل‌گر','brief-action');askMore.type='button';askMore.onclick=()=>{$('desk-chat').scrollIntoView({behavior:'smooth',block:'start'});$('chat-report').click()};brief.append(askMore);
  const votes=item('div','','vote-summary');votes.append(item('h3','توزیع رأی نقش‌ها'));
  const bar=item('div','','vote-bar');bar.setAttribute('role','img');bar.setAttribute('aria-label',positive.length+' رأی مثبت، '+negative.length+' رأی منفی و '+neutral+' خنثی یا بدون رأی');
  for(const [count,kind] of [[positive.length,'positive'],[neutral,'neutral'],[negative.length,'negative']]){const part=item('span','','vote-'+kind);part.style.width=(agents.length?count/agents.length*100:0)+'%';bar.append(part)}
  const legend=item('div','','vote-legend');for(const [label,count,kind] of [['مثبت',positive.length,'positive'],['خنثی یا بدون رأی',neutral,'neutral'],['منفی',negative.length,'negative']])legend.append(item('span',label+' '+count.toLocaleString('fa-IR'),'legend-'+kind));votes.append(bar,legend,item('p','رأی جهت‌دار، احتمال موفقیت نیست.','tiny'));
  const levels=item('div','','decision-levels');for(const [label,value] of [['قیمت مرجع',result.price],['حد مرجع',result.stop],['هدف مرجع',result.target]]){const box=item('div','','decision-level');box.append(item('small',label),item('strong',money(value)));levels.append(box)}
  const evidence=item('div','','decision-evidence');for(const [label,list] of [['شواهد مثبت',positive],['شواهد منفی',negative]]){const box=item('div','','evidence-box');box.append(item('h4',label));if(!list.length)box.append(item('p','رأیی ثبت نشده است.'));for(const agent of list.slice(0,3))box.append(item('p',agent.role+' · '+agent.detail));evidence.append(box)}
- decisionPanel.replaceChildren(title,meta,item('p',profileAdvice(result),'profile-advice'),levels,votes,evidence,item('p','گزارش پژوهشی است؛ سطوح سفارش نیستند و سود را تضمین نمی‌کنند.','decision-footnote'));
+ decisionPanel.replaceChildren(title,meta,brief,item('p',profileAdvice(result),'profile-advice'),levels,votes,evidence,item('p','گزارش پژوهشی است؛ سطوح سفارش نیستند و سود را تضمین نمی‌کنند.','decision-footnote'));
 }
 function renderChart(result){
  chartArea.replaceChildren();
@@ -189,7 +190,7 @@ function paintChat(symbol){
 $('contract').addEventListener('change',()=>paintChat($('contract').value));
 $('chat-clear').onclick=()=>{conversations.delete($('contract').value);saveChats();paintChat($('contract').value)};
 $('question').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('ask').requestSubmit()}});
-$('chat-report').onclick=()=>{if(!pendingChat){$('question').value='یک گزارش شامل نتیجه، شواهد موافق و مخالف، ریسک و شرایط ابطال بنویس.';$('ask').requestSubmit()}};
+$('chat-report').onclick=()=>{if(!pendingChat){$('question').value='یه گزارش کوتاه و خودمونی از این ارز بده: جمع‌بندی، دلیل موافق و مخالف و مهم‌ترین ریسک رو بگو.';$('ask').requestSubmit()}};
 $('ask').onsubmit=async e=>{
  e.preventDefault();if(pendingChat)return;
  const symbol=$('contract').value,q=$('question').value.trim();if(!q||!symbol)return;
